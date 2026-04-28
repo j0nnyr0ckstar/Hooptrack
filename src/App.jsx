@@ -419,7 +419,7 @@ function Profile({state,me,onLogout}){
 
 // ─── Coach: Overview ──────────────────────────────────────────────────────────
 
-function CoachOverview({state,me,selectedTeamId,onPostAnn,onUnpin}){
+function CoachOverview({state,me,selectedTeamId,onPostAnn,onUnpin,onLogout}){
   const team=state.teams[selectedTeamId];
   const players=Object.values(state.users).filter(u=>u.teamId===selectedTeamId&&u.role==="player");
   const todayN=state.workouts.filter(w=>w.teamId===selectedTeamId&&w.date===tod()).length;
@@ -473,7 +473,8 @@ function CoachOverview({state,me,selectedTeamId,onPostAnn,onUnpin}){
               <Pill text="⚠ Inactive" color={C.red}/>
             </Row>
           ))
-        }
+        }<Btn outline color={C.red} onClick={onLogout} style={{marginTop:8}}>Sign Out</Btn>
+<div style={{height:20}}/>
       </Card>
     </div>
   );
@@ -756,7 +757,7 @@ export default function App() {
       {!isCoach&&tab==="feed"        &&<Feed          state={state} me={me} onReact={handleReact} onComment={handleComment}/>}
       {!isCoach&&tab==="profile"     &&<Profile       state={state} me={me} onLogout={handleLogout}/>}
 
-      {isCoach&&tab==="home"         &&<CoachOverview state={state} me={me} selectedTeamId={activeTeamId} onPostAnn={handlePostAnn} onUnpin={handleUnpin}/>}
+      {isCoach&&tab==="home"         &&<CoachOverview state={state} me={me} selectedTeamId={activeTeamId} onPostAnn={handlePostAnn} onUnpin={handleUnpin} onLogout={handleLogout}/>}
       {isCoach&&tab==="players"      &&<CoachPlayers  state={state} selectedTeamId={activeTeamId}/>}
       {isCoach&&tab==="goals"        &&<CoachGoals    state={state} me={me} selectedTeamId={activeTeamId} onAddGoal={handleAddGoal} onDelGoal={handleDelGoal} onAddCST={handleAddCST} onDelCST={handleDelCST} onEditCST={handleEditCST}/>}
       {isCoach&&tab==="feed"         &&<Feed          state={state} me={me} onReact={handleReact} onComment={handleComment}/>}
