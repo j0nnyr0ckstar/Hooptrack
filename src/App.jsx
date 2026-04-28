@@ -419,7 +419,7 @@ function Profile({state,me,onLogout}){
 
 // ─── Coach: Overview ──────────────────────────────────────────────────────────
 
-function CoachOverview({state,me,selectedTeamId,onPostAnn,onUnpin,onLogout}){
+function CoachOverview({state,me,selectedTeamId,onPostAnn,onUnpin,onLogout,onReports}){
   const team=state.teams[selectedTeamId];
   const players=Object.values(state.users).filter(u=>u.teamId===selectedTeamId&&u.role==="player");
   const todayN=state.workouts.filter(w=>w.teamId===selectedTeamId&&w.date===tod()).length;
@@ -473,6 +473,7 @@ function CoachOverview({state,me,selectedTeamId,onPostAnn,onUnpin,onLogout}){
               <Pill text="⚠ Inactive" color={C.red}/>
             </Row>
           ))
+          <Btn color={C.navy} onClick={onReports} style={{marginTop:8}}>📊 Export Reports</Btn>
         }<Btn outline color={C.red} onClick={onLogout} style={{marginTop:8}}>Sign Out</Btn>
 <div style={{height:20}}/>
       </Card>
@@ -567,6 +568,330 @@ function CoachGoals({state,me,selectedTeamId,onAddGoal,onDelGoal,onAddCST,onDelC
     </div>
   );
 }
+// ─── Report Generator ─────────────────────────────────────────────────────────
+
+function generateTeamReport(state, selectedTeamId) {
+  const team = state.teams[selectedTeamId];
+  const players = Object.values(state.users).filter(u => u.teamId === selectedTeamId && u.role === "player");
+  const date = new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" });
+
+  const totalShots = players.reduce((s, p) => s + getTotalShots(state.workouts, p.id), 0);
+  const totalSessions = state.workouts.filter(w => w.teamId === selectedTeamId).length;
+  const activeCount = players.filter(p => daysSince(p.lastLog) <= 3).length;
+
+  const playerRows = players
+    .sort((a, b) => getTotalShots(state.workouts, b.id) - getTotalShots(state.workouts, a.id))
+    .map((p, i) => {
+      const shots = getTotalShots(state.workouts, p.id);
+      const dribble = getTotalDribble(state.workouts, p.id);
+      const sessions = state.workouts.filter(w => w.userId === p.id).length;
+      const badges = (state.badges[p.id] || []).map(b => BADGES_META[b]?.icon || "").join(" ");
+      const active = daysSince(p.lastLog) <= 3;
+      return `
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:14px 12px;font-weight:600;color:#0f172a;">${i + 1}. ${p.name}</td>
+          <td style="padding:14px 12px;text-align:center;color:#f97316;font-weight:700;">${shots}</td>
+          <td style="padding:14px 12px;text-align:center;color:#4f46e5;font-weight:600;">${dribble}m</td>
+          <td style="padding:14px 12px;text-align:center;font-weight:600;">${p.streak || 0} 🔥</td>
+          <td style="padding:14px 12px;text-align:center;color:#64748b;">${sessions}</td>
+          <td style="padding:14px 12px;text-align:center;font-size:16px;">${badges || "—"}</td>
+          <td style="padding:14px 12px;text-align:center;">
+            <span style="background:${active ? "#dcfce7" : "#fee2e2"};color:${active ? "#166534" : "#991b1b"};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">
+              ${active ? "Active" : `${daysSince(p.lastLog)}d ago`}
+            </span>
+          </td>
+        </tr>`;
+    }).join("");
+
+  const goalRows = (team.goals || []).map(goal => {
+    const totals = players.map(p =>
+      goal.type === "dribbling" ? getWeeklyDribble(state.workouts, p.id) : getWeeklyShots(state.workouts, p.id, goal.shotType)
+    );
+    const teamTotal = totals.reduce((s, v) => s + v, 0);
+    const pct = Math.min(100, Math.round((teamTotal / (goal.target * players.length || 1)) * 100));
+    return `
+      <div style="margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-weight:600;color:#0f172a;">${goal.label}</span>
+          <span style="font-size:13px;color:#64748b;">${teamTotal} / ${goal.target * players.length} total · ${pct}%</span>
+        </div>
+        <div style="background:#f1f5f9;border-radius:99px;height:10px;overflow:hidden;">
+          <div style="width:${pct}%;background:${pct >= 100 ? "#10b981" : "#f97316"};height:100%;border-radius:99px;"></div>
+        </div>
+      </div>`;
+  }).join("");
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>${team.name} — Team Report</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#f8fafc; color:#0f172a; }
+    @media print { body { background: white; } .no-print { display:none; } }
+  </style>
+</head>
+<body>
+  <div style="max-width:860px;margin:0 auto;padding:40px 32px;">
+
+    <div class="no-print" style="background:#4f46e5;color:white;padding:12px 20px;border-radius:12px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-weight:600;">🏀 HoopTrack Report — ready to print or save as PDF</span>
+      <button onclick="window.print()" style="background:white;color:#4f46e5;border:none;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer;font-size:14px;">Print / Save PDF</button>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;">
+      <div>
+        <div style="font-size:28px;font-weight:800;color:#f97316;">🏀 ${team.name}</div>
+        <div style="font-size:15px;color:#64748b;margin-top:4px;">Team Overview Report</div>
+      </div>
+      <div style="text-align:right;color:#64748b;font-size:13px;">Generated ${date}</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:36px;">
+      ${[
+        ["Total Players", players.length, "#4f46e5"],
+        ["Active (3 days)", activeCount, "#10b981"],
+        ["Total Shots", totalShots, "#f97316"],
+        ["Total Sessions", totalSessions, "#8b5cf6"],
+      ].map(([l, v, c]) => `
+        <div style="background:white;border-radius:14px;padding:20px;border:1.5px solid #e2e8f0;text-align:center;">
+          <div style="font-size:30px;font-weight:800;color:${c};">${v}</div>
+          <div style="font-size:12px;color:#64748b;margin-top:4px;font-weight:500;">${l}</div>
+        </div>`).join("")}
+    </div>
+
+    <div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;margin-bottom:28px;overflow:hidden;">
+      <div style="padding:18px 20px;border-bottom:1.5px solid #e2e8f0;">
+        <div style="font-size:16px;font-weight:700;">Player Breakdown</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="background:#f8fafc;">
+            <th style="padding:12px;text-align:left;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Player</th>
+            <th style="padding:12px;text-align:center;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Shots</th>
+            <th style="padding:12px;text-align:center;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Dribble</th>
+            <th style="padding:12px;text-align:center;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Streak</th>
+            <th style="padding:12px;text-align:center;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Sessions</th>
+            <th style="padding:12px;text-align:center;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Badges</th>
+            <th style="padding:12px;text-align:center;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Status</th>
+          </tr>
+        </thead>
+        <tbody>${playerRows}</tbody>
+      </table>
+      ${players.length === 0 ? '<div style="padding:32px;text-align:center;color:#64748b;">No players on this team yet.</div>' : ""}
+    </div>
+
+    ${(team.goals || []).length > 0 ? `
+    <div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;padding:20px;margin-bottom:28px;">
+      <div style="font-size:16px;font-weight:700;margin-bottom:20px;">Team Goal Progress (This Week)</div>
+      ${goalRows}
+    </div>` : ""}
+
+    <div style="text-align:center;color:#94a3b8;font-size:12px;margin-top:32px;">Generated by HoopTrack · hooptrack.app</div>
+  </div>
+</body>
+</html>`;
+}
+
+function generatePlayerReport(state, playerId, selectedTeamId) {
+  const player = state.users[playerId];
+  const team = state.teams[selectedTeamId];
+  const ws = state.workouts.filter(w => w.userId === playerId).sort((a, b) => b.date.localeCompare(a.date));
+  const badges = state.badges[playerId] || [];
+  const total = getTotalShots(state.workouts, playerId);
+  const dTotal = getTotalDribble(state.workouts, playerId);
+  const date = new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" });
+  const allGoals = [...(team?.goals || []), ...(state.playerGoals?.[playerId] || [])];
+
+  const breakdown = SHOT_TYPES.map(t => ({
+    type: t, made: getShotsByType(state.workouts, playerId, t)
+  })).filter(s => s.made > 0).sort((a, b) => b.made - a.made);
+  const bMax = breakdown[0]?.made || 1;
+
+  const breakdownRows = breakdown.map(s => `
+    <div style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+        <span style="font-size:14px;color:#0f172a;">${s.type}</span>
+        <span style="font-weight:700;font-size:14px;color:#f97316;">${s.made} made</span>
+      </div>
+      <div style="background:#f1f5f9;border-radius:99px;height:9px;overflow:hidden;">
+        <div style="width:${Math.round((s.made / bMax) * 100)}%;background:#f97316;height:100%;border-radius:99px;"></div>
+      </div>
+    </div>`).join("");
+
+  const goalRows = allGoals.map(goal => {
+    const prog = goal.type === "dribbling" ? getWeeklyDribble(state.workouts, playerId) : getWeeklyShots(state.workouts, playerId, goal.shotType);
+    const pct = Math.min(100, Math.round((prog / goal.target) * 100));
+    const done = prog >= goal.target;
+    return `
+      <div style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+          <span style="font-size:14px;font-weight:600;">${goal.label} ${done ? "✅" : ""}</span>
+          <span style="font-size:13px;color:#64748b;">${prog} / ${goal.target} · ${pct}%</span>
+        </div>
+        <div style="background:#f1f5f9;border-radius:99px;height:9px;overflow:hidden;">
+          <div style="width:${pct}%;background:${done ? "#10b981" : "#f97316"};height:100%;border-radius:99px;"></div>
+        </div>
+      </div>`;
+  }).join("");
+
+  const sessionRows = ws.slice(0, 10).map(w => {
+    const made = w.shots.reduce((s, sh) => s + sh.made, 0);
+    const att = w.shots.reduce((s, sh) => s + sh.attempted, 0);
+    const types = [...new Set(w.shots.map(s => s.type))].join(", ");
+    return `
+      <tr style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:12px;color:#64748b;font-size:13px;">${w.date}</td>
+        <td style="padding:12px;font-weight:600;color:#f97316;text-align:center;">${made}/${att}</td>
+        <td style="padding:12px;text-align:center;color:#4f46e5;">${w.dribble}m</td>
+        <td style="padding:12px;font-size:12px;color:#64748b;">${types || "—"}</td>
+        <td style="padding:12px;font-size:12px;color:#7c3aed;font-style:italic;">${w.note || ""}</td>
+      </tr>`;
+  }).join("");
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>${player.name} — Player Report</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#f8fafc; color:#0f172a; }
+    @media print { body { background: white; } .no-print { display:none; } }
+  </style>
+</head>
+<body>
+  <div style="max-width:860px;margin:0 auto;padding:40px 32px;">
+
+    <div class="no-print" style="background:#4f46e5;color:white;padding:12px 20px;border-radius:12px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-weight:600;">🏀 HoopTrack Report — ready to print or save as PDF</span>
+      <button onclick="window.print()" style="background:white;color:#4f46e5;border:none;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer;font-size:14px;">Print / Save PDF</button>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;">
+      <div>
+        <div style="font-size:28px;font-weight:800;color:#f97316;">🏀 ${player.name}</div>
+        <div style="font-size:15px;color:#64748b;margin-top:4px;">${team?.name} · Player Report</div>
+      </div>
+      <div style="text-align:right;color:#64748b;font-size:13px;">Generated ${date}</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px;">
+      ${[
+        ["Total Shots", total, "#f97316"],
+        ["Sessions", ws.length, "#4f46e5"],
+        ["Day Streak", `${player.streak || 0} 🔥`, "#10b981"],
+        ["Dribble Min", `${dTotal}m`, "#8b5cf6"],
+      ].map(([l, v, c]) => `
+        <div style="background:white;border-radius:14px;padding:20px;border:1.5px solid #e2e8f0;text-align:center;">
+          <div style="font-size:28px;font-weight:800;color:${c};">${v}</div>
+          <div style="font-size:12px;color:#64748b;margin-top:4px;font-weight:500;">${l}</div>
+        </div>`).join("")}
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+      ${breakdown.length > 0 ? `
+      <div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;padding:20px;">
+        <div style="font-size:15px;font-weight:700;margin-bottom:18px;">Shot Breakdown</div>
+        ${breakdownRows}
+      </div>` : ""}
+
+      ${allGoals.length > 0 ? `
+      <div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;padding:20px;">
+        <div style="font-size:15px;font-weight:700;margin-bottom:18px;">Weekly Goals</div>
+        ${goalRows}
+      </div>` : ""}
+    </div>
+
+    ${badges.length > 0 ? `
+    <div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;padding:20px;margin-bottom:24px;">
+      <div style="font-size:15px;font-weight:700;margin-bottom:16px;">Badges Earned</div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;">
+        ${badges.map(b => `
+          <div style="text-align:center;">
+            <div style="font-size:28px;">${BADGES_META[b]?.icon}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:4px;">${BADGES_META[b]?.label}</div>
+          </div>`).join("")}
+      </div>
+    </div>` : ""}
+
+    ${ws.length > 0 ? `
+    <div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;overflow:hidden;margin-bottom:28px;">
+      <div style="padding:18px 20px;border-bottom:1.5px solid #e2e8f0;">
+        <div style="font-size:15px;font-weight:700;">Recent Sessions</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="background:#f8fafc;">
+            <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Date</th>
+            <th style="padding:10px 12px;text-align:center;font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Shots</th>
+            <th style="padding:10px 12px;text-align:center;font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Dribble</th>
+            <th style="padding:10px 12px;font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Shot Types</th>
+            <th style="padding:10px 12px;font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Note</th>
+          </tr>
+        </thead>
+        <tbody>${sessionRows}</tbody>
+      </table>
+    </div>` : ""}
+
+    <div style="text-align:center;color:#94a3b8;font-size:12px;margin-top:32px;">Generated by HoopTrack · hooptrack.app</div>
+  </div>
+</body>
+</html>`;
+}
+
+function ReportsModal({ state, selectedTeamId, onClose }) {
+  const team = state.teams[selectedTeamId];
+  const players = Object.values(state.users).filter(u => u.teamId === selectedTeamId && u.role === "player");
+  const [type, setType] = useState("team");
+  const [playerId, setPlayerId] = useState(players[0]?.id || "");
+
+  const generate = () => {
+    const html = type === "team"
+      ? generateTeamReport(state, selectedTeamId)
+      : generatePlayerReport(state, playerId, selectedTeamId);
+    const w = window.open("", "_blank");
+    w.document.write(html);
+    w.document.close();
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:24}}>
+      <div style={{background:C.card,borderRadius:20,padding:24,width:"100%",maxWidth:380}}>
+        <Btwn style={{marginBottom:20}}>
+          <div style={{fontWeight:800,fontSize:18}}>Export Report</div>
+          <button onClick={onClose} style={{background:"transparent",border:"none",fontSize:22,cursor:"pointer",color:C.sub,lineHeight:1}}>✕</button>
+        </Btwn>
+
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:12,color:C.sub,marginBottom:8,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>Report Type</div>
+          <div style={{display:"flex",gap:8}}>
+            {[["team","🏀 Team Overview"],["player","👤 Individual Player"]].map(([id,label])=>(
+              <button key={id} onClick={()=>setType(id)} style={{flex:1,background:type===id?C.orange:C.muted,color:type===id?"#fff":C.sub,border:"none",borderRadius:10,padding:"10px 8px",fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}}>{label}</button>
+            ))}
+          </div>
+        </div>
+
+        {type==="player" && (
+          <Sel label="Select player" value={playerId} onChange={e=>setPlayerId(e.target.value)}>
+            {players.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+            {players.length===0&&<option disabled>No players yet</option>}
+          </Sel>
+        )}
+
+        <div style={{background:C.muted,borderRadius:12,padding:"12px 14px",marginBottom:16,fontSize:13,color:C.sub,lineHeight:1.6}}>
+          Opens in a new tab — use <strong>Print</strong> or <strong>Save as PDF</strong> from your browser to export.
+        </div>
+
+        <div style={{display:"flex",gap:8}}>
+          <Btn color={C.navy} onClick={generate} disabled={type==="player"&&!playerId}>Generate Report</Btn>
+          <Btn outline color={C.sub} onClick={onClose}>Cancel</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
@@ -577,6 +902,7 @@ export default function App() {
   const[logging,setLogging]=useState(false);
   const[selectedTeamId,setSelectedTeamId]=useState(null);
   const[showNewTeam,setShowNewTeam]=useState(false);
+  const[showReports,setShowReports]=useState(false);
 
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>setSession(session));
@@ -751,13 +1077,15 @@ export default function App() {
       />
 
       {showNewTeam&&<NewTeamModal onSave={handleNewTeam} onCancel={()=>setShowNewTeam(false)}/>}
+        {showReports&&<ReportsModal state={state} selectedTeamId={activeTeamId} onClose={()=>setShowReports(false)}/>}
+
 
       {!isCoach&&tab==="home"        &&<PlayerHome    state={state} me={me} onLog={()=>setLogging(true)}/>}
       {!isCoach&&tab==="leaderboard" &&<Leaderboard   state={state} me={me} selectedTeamId={activeTeamId}/>}
       {!isCoach&&tab==="feed"        &&<Feed          state={state} me={me} onReact={handleReact} onComment={handleComment}/>}
       {!isCoach&&tab==="profile"     &&<Profile       state={state} me={me} onLogout={handleLogout}/>}
 
-      {isCoach&&tab==="home"         &&<CoachOverview state={state} me={me} selectedTeamId={activeTeamId} onPostAnn={handlePostAnn} onUnpin={handleUnpin} onLogout={handleLogout}/>}
+      {isCoach&&tab==="home" &&<CoachOverview state={state} me={me} selectedTeamId={activeTeamId} onPostAnn={handlePostAnn} onUnpin={handleUnpin} onLogout={handleLogout} onReports={()=>setShowReports(true)}/>}
       {isCoach&&tab==="players"      &&<CoachPlayers  state={state} selectedTeamId={activeTeamId}/>}
       {isCoach&&tab==="goals"        &&<CoachGoals    state={state} me={me} selectedTeamId={activeTeamId} onAddGoal={handleAddGoal} onDelGoal={handleDelGoal} onAddCST={handleAddCST} onDelCST={handleDelCST} onEditCST={handleEditCST}/>}
       {isCoach&&tab==="feed"         &&<Feed          state={state} me={me} onReact={handleReact} onComment={handleComment}/>}
