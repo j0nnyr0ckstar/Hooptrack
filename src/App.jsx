@@ -34,37 +34,22 @@ const AV_BG = ["#4F46E5","#F97316","#10B981","#8B5CF6","#EF4444","#06B6D4","#F59
 const tod        = () => new Date().toISOString().slice(0,10);
 const initials   = n  => (n||"").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
 const daysSince  = d  => d ? Math.floor((Date.now()-new Date(d))/86400000) : 999;
+const genCode    = name => (name.replace(/[^a-zA-Z]/g,"").toUpperCase().slice(0,4)+String(Math.floor(Math.random()*100)).padStart(2,"0")).slice(0,8);
 
 const getTotalShots    = (ws,uid) => ws.filter(w=>w.userId===uid).flatMap(w=>w.shots).reduce((s,sh)=>s+sh.made,0);
 const getTotalDribble  = (ws,uid) => ws.filter(w=>w.userId===uid).reduce((s,w)=>s+w.dribble,0);
 const getShotsByType   = (ws,uid,type) => ws.filter(w=>w.userId===uid).flatMap(w=>w.shots).filter(s=>s.type===type).reduce((s,sh)=>s+sh.made,0);
-const getWeeklyShots   = (ws,uid,type) => {
-  const cut=new Date(); cut.setDate(cut.getDate()-7);
-  return ws.filter(w=>w.userId===uid&&new Date(w.date)>=cut).flatMap(w=>w.shots).filter(s=>!type||s.type===type).reduce((s,sh)=>s+sh.made,0);
-};
-const getWeeklyDribble = (ws,uid) => {
-  const cut=new Date(); cut.setDate(cut.getDate()-7);
-  return ws.filter(w=>w.userId===uid&&new Date(w.date)>=cut).reduce((s,w)=>s+w.dribble,0);
-};
+const getWeeklyShots   = (ws,uid,type) => { const cut=new Date(); cut.setDate(cut.getDate()-7); return ws.filter(w=>w.userId===uid&&new Date(w.date)>=cut).flatMap(w=>w.shots).filter(s=>!type||s.type===type).reduce((s,sh)=>s+sh.made,0); };
+const getWeeklyDribble = (ws,uid) => { const cut=new Date(); cut.setDate(cut.getDate()-7); return ws.filter(w=>w.userId===uid&&new Date(w.date)>=cut).reduce((s,w)=>s+w.dribble,0); };
 
 function xWorkout(w) {
   const reactions={};
   for (const r of w.reactions||[]) { if (!reactions[r.emoji]) reactions[r.emoji]=[]; reactions[r.emoji].push(r.user_id); }
-  return {
-    id:w.id, userId:w.user_id, teamId:w.team_id,
-    date:w.date, dribble:w.dribble||0, note:w.note||"",
-    shots:(w.shots||[]).map(s=>({type:s.type,location:s.location,cond:s.cond||"",made:s.made||0,attempted:s.attempted||0})),
-    reactions,
-    comments:(w.comments||[]).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(c=>({uid:c.user_id,text:c.text,date:c.date})),
-  };
+  return { id:w.id, userId:w.user_id, teamId:w.team_id, date:w.date, dribble:w.dribble||0, note:w.note||"", shots:(w.shots||[]).map(s=>({type:s.type,location:s.location,cond:s.cond||"",made:s.made||0,attempted:s.attempted||0})), reactions, comments:(w.comments||[]).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(c=>({uid:c.user_id,text:c.text,date:c.date})) };
 }
 function xUser(u) { return {id:u.id,name:u.name,role:u.role,teamId:u.team_id,streak:u.streak||0,lastLog:u.last_log}; }
 function xGoal(g) { return {id:g.id,type:g.type,shotType:g.shot_type,target:g.target,period:g.period,label:g.label,playerId:g.player_id}; }
-function groupBadges(badges) {
-  const g={};
-  for (const b of badges||[]) { if (!g[b.user_id]) g[b.user_id]=[]; g[b.user_id].push(b.badge_id); }
-  return g;
-}
+function groupBadges(badges) { const g={}; for (const b of badges||[]) { if (!g[b.user_id]) g[b.user_id]=[]; g[b.user_id].push(b.badge_id); } return g; }
 
 // ─── Atoms ───────────────────────────────────────────────────────────────────
 
@@ -103,10 +88,11 @@ function Auth() {
     setBusy(true);setErr("");
     const{data,error}=await supabase.auth.signUp({email:f.email,password:f.pw});
     if(error){setErr(error.message);setBusy(false);return;}
-    const code=(f.teamName.replace(/[^a-zA-Z]/g,"").toUpperCase().slice(0,4)+String(Math.floor(Math.random()*100)).padStart(2,"0")).slice(0,8);
+    const code=genCode(f.teamName);
     const{data:team,error:tErr}=await supabase.from("teams").insert({name:f.teamName,code}).select().single();
     if(tErr){setErr(tErr.message);setBusy(false);return;}
     await supabase.from("users").insert({id:data.user.id,name:f.name,role:"coach",team_id:team.id,streak:0});
+    await supabase.from("coach_teams").insert({coach_id:data.user.id,team_id:team.id});
     setBusy(false);
   };
 
@@ -142,8 +128,68 @@ function Auth() {
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
-function Header({title,sub}){return <div style={{padding:"16px 20px 12px",background:C.dark,borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:19,fontWeight:800,color:C.text}}>{title}</div>{sub&&<div style={{fontSize:12,color:C.sub,marginTop:2}}>{sub}</div>}</div>;}
+function Header({title,sub,coachTeams,selectedTeamId,onSwitchTeam,onNewTeam}){
+  const [open,setOpen]=useState(false);
+  const isCoach=coachTeams&&coachTeams.length>0;
+  return(
+    <div style={{padding:"12px 16px",background:C.dark,borderBottom:`1px solid ${C.border}`}}>
+      <Btwn>
+        <div>
+          <div style={{fontSize:19,fontWeight:800,color:C.text}}>{title}</div>
+          {sub&&<div style={{fontSize:12,color:C.sub,marginTop:2}}>{sub}</div>}
+        </div>
+        {isCoach&&(
+          <div style={{position:"relative"}}>
+            <button onClick={()=>setOpen(!open)} style={{background:C.navy,color:"#fff",border:"none",borderRadius:10,padding:"8px 12px",fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+              Teams <span style={{fontSize:10}}>{open?"▲":"▼"}</span>
+            </button>
+            {open&&(
+              <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:C.card,border:`1.5px solid ${C.border}`,borderRadius:12,minWidth:180,zIndex:200,overflow:"hidden",boxShadow:"0 4px 20px rgba(0,0,0,0.1)"}}>
+                {coachTeams.map(t=>(
+                  <button key={t.id} onClick={()=>{onSwitchTeam(t.id);setOpen(false);}} style={{width:"100%",background:t.id===selectedTeamId?C.orange+"18":"transparent",border:"none",borderBottom:`1px solid ${C.border}`,padding:"11px 14px",textAlign:"left",fontWeight:t.id===selectedTeamId?700:400,fontSize:13,color:t.id===selectedTeamId?C.orange:C.text,cursor:"pointer",fontFamily:"inherit"}}>
+                    {t.id===selectedTeamId?"✓ ":""}{t.name}
+                  </button>
+                ))}
+                <button onClick={()=>{onNewTeam();setOpen(false);}} style={{width:"100%",background:"transparent",border:"none",padding:"11px 14px",textAlign:"left",fontWeight:600,fontSize:13,color:C.navy,cursor:"pointer",fontFamily:"inherit"}}>
+                  + New Team
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </Btwn>
+    </div>
+  );
+}
+
 function Nav({tabs,active,onChange}){return <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:C.dark,borderTop:`1px solid ${C.border}`,display:"flex",zIndex:100}}>{tabs.map(({id,label,icon})=><button key={id} onClick={()=>onChange(id)} style={{flex:1,border:"none",background:"transparent",padding:"10px 0 14px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,fontFamily:"inherit"}}><span style={{fontSize:20}}>{icon}</span><span style={{fontSize:10,color:active===id?C.orange:C.sub,fontWeight:active===id?700:400,transition:"color 0.2s"}}>{label}</span></button>)}</div>;}
+
+// ─── New Team Modal ───────────────────────────────────────────────────────────
+
+function NewTeamModal({onSave,onCancel}){
+  const[name,setName]=useState("");
+  const[busy,setBusy]=useState(false);
+  const[err,setErr]=useState("");
+  const save=async()=>{
+    if(!name.trim())return setErr("Enter a team name.");
+    setBusy(true);
+    await onSave(name.trim());
+    setBusy(false);
+  };
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:24}}>
+      <div style={{background:C.card,borderRadius:20,padding:24,width:"100%",maxWidth:380}}>
+        <div style={{fontWeight:800,fontSize:18,marginBottom:16}}>Create New Team</div>
+        {err&&<div style={{background:"#FEF2F2",color:"#B91C1C",borderRadius:10,padding:"8px 12px",marginBottom:12,fontSize:13}}>{err}</div>}
+        <Inp label="Team name" placeholder='e.g. "JV Eagles"' value={name} onChange={e=>setName(e.target.value)}/>
+        <div style={{display:"flex",gap:8,marginTop:8}}>
+          <Btn color={C.green} onClick={save} disabled={busy}>{busy?"Creating…":"Create Team"}</Btn>
+          <Btn outline color={C.sub} onClick={onCancel}>Cancel</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Logger ───────────────────────────────────────────────────────────────────
 
@@ -249,9 +295,8 @@ function Feed({state,me,onReact,onComment}){
 
 // ─── Leaderboard ──────────────────────────────────────────────────────────────
 
-function Leaderboard({state,me}){
-  const teamId=state.users[me]?.teamId;
-  const players=Object.values(state.users).filter(u=>u.teamId===teamId&&u.role==="player");
+function Leaderboard({state,me,selectedTeamId}){
+  const players=Object.values(state.users).filter(u=>u.teamId===selectedTeamId&&u.role==="player");
   const[cat,setCat]=useState("total");
   const CATS=[{id:"total",label:"Total Shots",icon:"🎯"},{id:"ft",label:"Free Throws",icon:"🏀"},{id:"3pt",label:"3-Pointers",icon:"🔥"},{id:"dribble",label:"Dribble Min",icon:"⏱"},{id:"streak",label:"Streak",icon:"⚡"}];
   const val=uid=>{switch(cat){case"total":return getTotalShots(state.workouts,uid);case"ft":return getShotsByType(state.workouts,uid,"Free Throw");case"3pt":return getShotsByType(state.workouts,uid,"3-Pointer");case"dribble":return getTotalDribble(state.workouts,uid);case"streak":return state.users[uid]?.streak||0;}};
@@ -263,6 +308,7 @@ function Leaderboard({state,me}){
       <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:10,marginBottom:12}}>
         {CATS.map(c=><button key={c.id} onClick={()=>setCat(c.id)} style={{background:cat===c.id?C.orange:C.card,color:cat===c.id?"#fff":C.sub,border:`1.5px solid ${cat===c.id?C.orange:C.border}`,borderRadius:10,padding:"8px 12px",fontWeight:600,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit",flexShrink:0,transition:"all 0.2s"}}>{c.icon} {c.label}</button>)}
       </div>
+      {ranked.length===0&&<div style={{textAlign:"center",color:C.sub,marginTop:40,fontSize:14}}>No players on this team yet.</div>}
       {ranked.map((p,idx)=>{const v=val(p.id);const maxV=val(ranked[0]?.id)||1;const isMe=p.id===me;return(
         <Card key={p.id} style={{border:isMe?`2px solid ${C.orange}`:`1.5px solid ${C.border}`}}>
           <Row>
@@ -373,11 +419,10 @@ function Profile({state,me,onLogout}){
 
 // ─── Coach: Overview ──────────────────────────────────────────────────────────
 
-function CoachOverview({state,me,onPostAnn,onUnpin}){
-  const teamId=state.users[me]?.teamId;
-  const team=state.teams[teamId];
-  const players=Object.values(state.users).filter(u=>u.teamId===teamId&&u.role==="player");
-  const todayN=state.workouts.filter(w=>w.teamId===teamId&&w.date===tod()).length;
+function CoachOverview({state,me,selectedTeamId,onPostAnn,onUnpin}){
+  const team=state.teams[selectedTeamId];
+  const players=Object.values(state.users).filter(u=>u.teamId===selectedTeamId&&u.role==="player");
+  const todayN=state.workouts.filter(w=>w.teamId===selectedTeamId&&w.date===tod()).length;
   const activeN=players.filter(p=>daysSince(p.lastLog)<=3).length;
   const[annText,setAnnText]=useState("");
   const[showCode,setShowCode]=useState(false);
@@ -436,9 +481,8 @@ function CoachOverview({state,me,onPostAnn,onUnpin}){
 
 // ─── Coach: Players ───────────────────────────────────────────────────────────
 
-function CoachPlayers({state,me}){
-  const teamId=state.users[me]?.teamId;
-  const players=Object.values(state.users).filter(u=>u.teamId===teamId&&u.role==="player").sort((a,b)=>(b.streak||0)-(a.streak||0));
+function CoachPlayers({state,selectedTeamId}){
+  const players=Object.values(state.users).filter(u=>u.teamId===selectedTeamId&&u.role==="player").sort((a,b)=>(b.streak||0)-(a.streak||0));
   return(
     <div style={scroll}>
       {players.map(p=>{const since=daysSince(p.lastLog);const inactive=since>3;const pb=state.badges[p.id]||[];return(
@@ -461,10 +505,9 @@ function CoachPlayers({state,me}){
 
 // ─── Coach: Goals ─────────────────────────────────────────────────────────────
 
-function CoachGoals({state,me,onAddGoal,onDelGoal,onAddCST,onDelCST,onEditCST}){
-  const teamId=state.users[me]?.teamId;
-  const team=state.teams[teamId];
-  const players=Object.values(state.users).filter(u=>u.teamId===teamId&&u.role==="player");
+function CoachGoals({state,me,selectedTeamId,onAddGoal,onDelGoal,onAddCST,onDelCST,onEditCST}){
+  const team=state.teams[selectedTeamId];
+  const players=Object.values(state.users).filter(u=>u.teamId===selectedTeamId&&u.role==="player");
   const customST=team?.customShotTypes||[];
   const[showGoal,setShowGoal]=useState(false);
   const[f,setF]=useState({type:"shots",shotType:SHOT_TYPES[0],target:"",label:"",period:"weekly",assignTo:"team"});
@@ -487,7 +530,7 @@ function CoachGoals({state,me,onAddGoal,onDelGoal,onAddCST,onDelCST,onEditCST}){
           <div style={{display:"flex",gap:8}}><Btn color={C.green} onClick={addCST}>Save</Btn><Btn outline color={C.sub} onClick={()=>setShowCST(false)}>Cancel</Btn></div>
         </Card>
       )}
-      {customST.length===0&&!showCST&&<div style={{color:C.sub,fontSize:13,marginBottom:16,padding:"12px 14px",background:C.muted,borderRadius:12}}>No custom shot types yet. Add drills like "Euro Step" or "Step-Back 3" for players to track.</div>}
+      {customST.length===0&&!showCST&&<div style={{color:C.sub,fontSize:13,marginBottom:16,padding:"12px 14px",background:C.muted,borderRadius:12}}>No custom shot types yet.</div>}
       {customST.map(t=>(
         <Card key={t.id} style={{marginBottom:8}}>
           {editId===t.id
@@ -531,6 +574,8 @@ export default function App() {
   const[appData,setAppData]=useState(null);
   const[tab,setTab]=useState("home");
   const[logging,setLogging]=useState(false);
+  const[selectedTeamId,setSelectedTeamId]=useState(null);
+  const[showNewTeam,setShowNewTeam]=useState(false);
 
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>setSession(session));
@@ -538,50 +583,94 @@ export default function App() {
     return()=>subscription.unsubscribe();
   },[]);
 
- useEffect(()=>{
+  useEffect(()=>{
     if(session===undefined)return;
-    if(!session){setAppData(null);return;}
+    if(!session){setAppData(null);setSelectedTeamId(null);return;}
     const tryLoad=async(retries=8)=>{
       const{data}=await supabase.from("users").select("*").eq("id",session.user.id).single();
-      if(!data){
-        if(retries>0){await new Promise(r=>setTimeout(r,1000));return tryLoad(retries-1);}
-        await supabase.auth.signOut();
-        return;
-      }
+      if(!data){if(retries>0){await new Promise(r=>setTimeout(r,1000));return tryLoad(retries-1);}await supabase.auth.signOut();return;}
       loadData(session.user.id);
     };
     tryLoad();
   },[session]);
 
-const loadData=async(userId, retries=5)=>{
+  const loadData=async(userId)=>{
     const{data:rawProfile}=await supabase.from("users").select("*").eq("id",userId).single();
-    if(!rawProfile){
-      if(retries>0){await new Promise(r=>setTimeout(r,800));return loadData(userId,retries-1);}
-      return;
-    }
+    if(!rawProfile)return;
     const profile=xUser(rawProfile);
-    const{data:rawTeam}=await supabase.from("teams").select("*").eq("id",profile.teamId).single();
-    const{data:rawAnns}=await supabase.from("announcements").select("*").eq("team_id",profile.teamId).order("created_at",{ascending:false});
-    const{data:rawMembers}=await supabase.from("users").select("*").eq("team_id",profile.teamId);
+    const isCoach=profile.role==="coach";
+
+    // For coaches, load ALL their teams via coach_teams junction
+    let teamIds=[profile.teamId];
+    let coachTeamsList=[];
+    if(isCoach){
+      const{data:ct}=await supabase.from("coach_teams").select("team_id").eq("coach_id",userId);
+      if(ct&&ct.length>0){
+        teamIds=[...new Set(ct.map(r=>r.team_id))];
+      }
+      const{data:teamsData}=await supabase.from("teams").select("*").in("id",teamIds);
+      coachTeamsList=teamsData||[];
+    }
+
+    // Pick selected team
+    const activeTeamId=selectedTeamId&&teamIds.includes(selectedTeamId)?selectedTeamId:teamIds[0];
+    if(!selectedTeamId||!teamIds.includes(selectedTeamId))setSelectedTeamId(activeTeamId);
+
+    // Load data for ALL teams the coach manages (so switcher works instantly)
+    const teamsMap={};
+    for(const tid of teamIds){
+      const{data:rawTeam}=await supabase.from("teams").select("*").eq("id",tid).single();
+      const{data:rawAnns}=await supabase.from("announcements").select("*").eq("team_id",tid).order("created_at",{ascending:false});
+      const{data:rawGoals}=await supabase.from("goals").select("*").eq("team_id",tid);
+      const{data:rawCST}=await supabase.from("custom_shot_types").select("*").eq("team_id",tid).order("created_at");
+      teamsMap[tid]={...(rawTeam||{}),goals:(rawGoals||[]).map(xGoal).filter(g=>!g.playerId),announcements:rawAnns||[],customShotTypes:rawCST||[]};
+    }
+
+    // Members across all teams
+    const{data:rawMembers}=await supabase.from("users").select("*").in("team_id",teamIds);
     const members=(rawMembers||[]).map(xUser);
-    const{data:rawWorkouts}=await supabase.from("workouts").select("*, shots(*), reactions(*), comments(*)").eq("team_id",profile.teamId).order("date",{ascending:false}).order("created_at",{ascending:false});
+
+    // Workouts for all teams
+    const{data:rawWorkouts}=await supabase.from("workouts").select("*, shots(*), reactions(*), comments(*)").in("team_id",teamIds).order("date",{ascending:false}).order("created_at",{ascending:false});
     const workouts=(rawWorkouts||[]).map(xWorkout);
-    const{data:rawGoals}=await supabase.from("goals").select("*").eq("team_id",profile.teamId);
-    const goals=(rawGoals||[]).map(xGoal);
-    const{data:rawCST}=await supabase.from("custom_shot_types").select("*").eq("team_id",profile.teamId).order("created_at");
+
+    // Player goals
+    const{data:rawGoalsAll}=await supabase.from("goals").select("*").in("team_id",teamIds);
+    const playerGoals={};
+    for(const g of (rawGoalsAll||[]).map(xGoal).filter(g=>g.playerId)){
+      if(!playerGoals[g.playerId])playerGoals[g.playerId]=[];
+      playerGoals[g.playerId].push(g);
+    }
+
+    // Badges
     const memberIds=(rawMembers||[]).map(m=>m.id);
     const{data:rawBadges}=memberIds.length>0?await supabase.from("badges").select("*").in("user_id",memberIds):{data:[]};
-    const badgesMap=groupBadges(rawBadges||[]);
+
     const allUsers={};
     for(const m of members)allUsers[m.id]=m;
-    const teamGoals=goals.filter(g=>!g.playerId);
-    const playerGoals={};
-    for(const g of goals.filter(g=>g.playerId)){if(!playerGoals[g.playerId])playerGoals[g.playerId]=[];playerGoals[g.playerId].push(g);}
-    const team={...(rawTeam||{}),goals:teamGoals,announcements:rawAnns||[],customShotTypes:rawCST||[]};
-    setAppData({profile,state:{users:allUsers,teams:{[team.id]:team},workouts,playerGoals,badges:badgesMap}});
+
+    setAppData({
+      profile,
+      coachTeams:coachTeamsList,
+      state:{users:allUsers,teams:teamsMap,workouts,playerGoals,badges:groupBadges(rawBadges||[])},
+    });
   };
 
   const refresh=()=>session&&loadData(session.user.id);
+
+  const handleNewTeam=async(name)=>{
+    const code=genCode(name);
+    const{data:team}=await supabase.from("teams").insert({name,code}).select().single();
+    await supabase.from("coach_teams").insert({coach_id:appData.profile.id,team_id:team.id});
+    setSelectedTeamId(team.id);
+    setShowNewTeam(false);
+    await refresh();
+  };
+
+  const handleSwitchTeam=async(teamId)=>{
+    setSelectedTeamId(teamId);
+    setTab("home");
+  };
 
   const handleSaveWorkout=async({shots,dribble,note})=>{
     const{profile,state}=appData;
@@ -615,33 +704,26 @@ const loadData=async(userId, retries=5)=>{
   };
 
   const handlePostAnn=async(text)=>{
-    await supabase.from("announcements").insert({team_id:appData.profile.teamId,text,pinned:true,date:tod()});
+    await supabase.from("announcements").insert({team_id:selectedTeamId,text,pinned:true,date:tod()});
     await refresh();
   };
 
-  const handleUnpin=async(id)=>{
-    await supabase.from("announcements").update({pinned:false}).eq("id",id);
-    await refresh();
-  };
-
-  const handleAddGoal=async(f)=>{
-    await supabase.from("goals").insert({team_id:appData.profile.teamId,player_id:f.assignTo==="team"?null:f.assignTo,type:f.type,shot_type:f.shotType,target:f.target,period:f.period,label:f.label});
-    await refresh();
-  };
-
+  const handleUnpin=async(id)=>{await supabase.from("announcements").update({pinned:false}).eq("id",id);await refresh();};
+  const handleAddGoal=async(f)=>{await supabase.from("goals").insert({team_id:selectedTeamId,player_id:f.assignTo==="team"?null:f.assignTo,type:f.type,shot_type:f.shotType,target:f.target,period:f.period,label:f.label});await refresh();};
   const handleDelGoal=async(id)=>{await supabase.from("goals").delete().eq("id",id);await refresh();};
-  const handleAddCST=async({name,cond})=>{await supabase.from("custom_shot_types").insert({team_id:appData.profile.teamId,name:name.trim(),cond:cond.trim()});await refresh();};
+  const handleAddCST=async({name,cond})=>{await supabase.from("custom_shot_types").insert({team_id:selectedTeamId,name:name.trim(),cond:cond.trim()});await refresh();};
   const handleDelCST=async(id)=>{await supabase.from("custom_shot_types").delete().eq("id",id);await refresh();};
   const handleEditCST=async(id,{name,cond})=>{await supabase.from("custom_shot_types").update({name:name.trim(),cond:cond.trim()}).eq("id",id);await refresh();};
-  const handleLogout=async()=>{await supabase.auth.signOut();setAppData(null);setTab("home");};
+  const handleLogout=async()=>{await supabase.auth.signOut();setAppData(null);setSelectedTeamId(null);setTab("home");};
 
   if(session===undefined||(session&&!appData))return <Spinner/>;
   if(!session)return <Auth/>;
 
-  const{profile,state}=appData;
+  const{profile,state,coachTeams}=appData;
   const isCoach=profile.role==="coach";
   const me=profile.id;
-  const team=state.teams[profile.teamId];
+  const activeTeamId=isCoach?selectedTeamId:profile.teamId;
+  const team=state.teams[activeTeamId];
 
   if(logging){
     return(
@@ -658,16 +740,28 @@ const loadData=async(userId, retries=5)=>{
 
   return(
     <div style={{background:C.dark,minHeight:"100vh",maxWidth:430,margin:"0 auto",fontFamily:"system-ui,-apple-system,sans-serif",color:C.text,position:"relative"}}>
-      <Header title={titles[tab]} sub={isCoach?`${team?.name} · Join code: ${team?.code}`:undefined}/>
+      <Header
+        title={titles[tab]}
+        sub={isCoach?`${team?.name} · Code: ${team?.code}`:undefined}
+        coachTeams={isCoach?coachTeams:[]}
+        selectedTeamId={activeTeamId}
+        onSwitchTeam={handleSwitchTeam}
+        onNewTeam={()=>setShowNewTeam(true)}
+      />
+
+      {showNewTeam&&<NewTeamModal onSave={handleNewTeam} onCancel={()=>setShowNewTeam(false)}/>}
+
       {!isCoach&&tab==="home"        &&<PlayerHome    state={state} me={me} onLog={()=>setLogging(true)}/>}
-      {!isCoach&&tab==="leaderboard" &&<Leaderboard   state={state} me={me}/>}
+      {!isCoach&&tab==="leaderboard" &&<Leaderboard   state={state} me={me} selectedTeamId={activeTeamId}/>}
       {!isCoach&&tab==="feed"        &&<Feed          state={state} me={me} onReact={handleReact} onComment={handleComment}/>}
       {!isCoach&&tab==="profile"     &&<Profile       state={state} me={me} onLogout={handleLogout}/>}
-      {isCoach&&tab==="home"         &&<CoachOverview state={state} me={me} onPostAnn={handlePostAnn} onUnpin={handleUnpin}/>}
-      {isCoach&&tab==="players"      &&<CoachPlayers  state={state} me={me}/>}
-      {isCoach&&tab==="goals"        &&<CoachGoals    state={state} me={me} onAddGoal={handleAddGoal} onDelGoal={handleDelGoal} onAddCST={handleAddCST} onDelCST={handleDelCST} onEditCST={handleEditCST}/>}
+
+      {isCoach&&tab==="home"         &&<CoachOverview state={state} me={me} selectedTeamId={activeTeamId} onPostAnn={handlePostAnn} onUnpin={handleUnpin}/>}
+      {isCoach&&tab==="players"      &&<CoachPlayers  state={state} selectedTeamId={activeTeamId}/>}
+      {isCoach&&tab==="goals"        &&<CoachGoals    state={state} me={me} selectedTeamId={activeTeamId} onAddGoal={handleAddGoal} onDelGoal={handleDelGoal} onAddCST={handleAddCST} onDelCST={handleDelCST} onEditCST={handleEditCST}/>}
       {isCoach&&tab==="feed"         &&<Feed          state={state} me={me} onReact={handleReact} onComment={handleComment}/>}
-      {isCoach&&tab==="leaderboard"  &&<Leaderboard   state={state} me={me}/>}
+      {isCoach&&tab==="leaderboard"  &&<Leaderboard   state={state} me={me} selectedTeamId={activeTeamId}/>}
+
       <Nav tabs={tabs} active={tab} onChange={setTab}/>
       {!isCoach&&<button onClick={()=>setLogging(true)} style={{position:"fixed",bottom:74,right:"max(20px,calc(50vw - 195px))",width:54,height:54,borderRadius:"50%",background:C.orange,border:"none",fontSize:26,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:99,color:"#fff",fontWeight:700}}>+</button>}
     </div>
