@@ -28,6 +28,7 @@ const C = {
   green:"#10B981", red:"#EF4444",
 };
 const AV_BG = ["#4F46E5","#F97316","#10B981","#8B5CF6","#EF4444","#06B6D4","#F59E0B","#EC4899"];
+const GRADES = ["3rd","4th","5th","6th","7th","8th","9th","10th","11th","12th"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ function xWorkout(w) {
   for (const r of w.reactions||[]) { if (!reactions[r.emoji]) reactions[r.emoji]=[]; reactions[r.emoji].push(r.user_id); }
   return { id:w.id, userId:w.user_id, teamId:w.team_id, date:w.date, dribble:w.dribble||0, note:w.note||"", shots:(w.shots||[]).map(s=>({type:s.type,location:s.location,cond:s.cond||"",made:s.made||0,attempted:s.attempted||0})), reactions, comments:(w.comments||[]).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(c=>({uid:c.user_id,text:c.text,date:c.date})) };
 }
-function xUser(u) { return {id:u.id,name:u.name,role:u.role,teamId:u.team_id,streak:u.streak||0,lastLog:u.last_log}; }
+function xUser(u) { return {id:u.id,name:u.name,role:u.role,teamId:u.team_id,grade:u.grade||"",streak:u.streak||0,lastLog:u.last_log}; }
 function xGoal(g) { return {id:g.id,type:g.type,shotType:g.shot_type,target:g.target,period:g.period,label:g.label,playerId:g.player_id}; }
 function groupBadges(badges) { const g={}; for (const b of badges||[]) { if (!g[b.user_id]) g[b.user_id]=[]; g[b.user_id].push(b.badge_id); } return g; }
 
@@ -280,7 +281,7 @@ function ReportsModal({state,selectedTeamId,onClose}){
 
 function Auth() {
   const[tab,setTab]=useState("login");
-  const[f,setF]=useState({email:"",name:"",teamName:"",code:"",pw:""});
+  const[f,setF]=useState({email:"",name:"",teamName:"",code:"",grade:"",pw:""});
   const[err,setErr]=useState("");
   const[busy,setBusy]=useState(false);
   const sf=(k,v)=>setF(x=>({...x,[k]:v}));
@@ -298,13 +299,13 @@ function Auth() {
     setBusy(false);
   };
   const joinTeam=async()=>{
-    if(!f.email||!f.name||!f.code||!f.pw)return setErr("Fill in all fields.");
+    if(!f.email||!f.name||!f.code||!f.grade||!f.pw)return setErr("Fill in all fields.");
     setBusy(true);setErr("");
     const{data:team}=await supabase.from("teams").select("*").eq("code",f.code.trim().toUpperCase()).single();
     if(!team){setErr("Team code not found. Check with your coach.");setBusy(false);return;}
     const{data,error}=await supabase.auth.signUp({email:f.email,password:f.pw});
     if(error){setErr(error.message);setBusy(false);return;}
-    await supabase.from("users").insert({id:data.user.id,name:f.name,role:"player",team_id:team.id,streak:0});
+    await supabase.from("users").insert({id:data.user.id,name:f.name,role:"player",team_id:team.id,grade:f.grade,streak:0});
     setBusy(false);
   };
   const TABS=[["login","Sign In"],["coach","New Coach"],["player","Join Team"]];
@@ -321,7 +322,7 @@ function Auth() {
       {err&&<div style={{background:"#FEF2F2",color:"#B91C1C",borderRadius:12,padding:"10px 14px",marginBottom:14,fontSize:13,border:"1px solid #FECACA"}}>{err}</div>}
       {tab==="login"&&<><Inp label="Email" type="email" placeholder="you@email.com" value={f.email} onChange={e=>sf("email",e.target.value)}/><Inp label="Password" type="password" value={f.pw} onChange={e=>sf("pw",e.target.value)}/><Btn onClick={login} disabled={busy}>{busy?"Signing in…":"Sign In"}</Btn></>}
       {tab==="coach"&&<><Inp label="Your name" placeholder="Coach name" value={f.name} onChange={e=>sf("name",e.target.value)}/><Inp label="Email" type="email" placeholder="you@email.com" value={f.email} onChange={e=>sf("email",e.target.value)}/><Inp label="Team name" placeholder='e.g. "Eastside Ballers"' value={f.teamName} onChange={e=>sf("teamName",e.target.value)}/><Inp label="Password (6+ characters)" type="password" value={f.pw} onChange={e=>sf("pw",e.target.value)}/><Btn onClick={createTeam} disabled={busy}>{busy?"Creating…":"Create Team"}</Btn></>}
-      {tab==="player"&&<><Inp label="Your name" placeholder="Your name" value={f.name} onChange={e=>sf("name",e.target.value)}/><Inp label="Email" type="email" placeholder="you@email.com" value={f.email} onChange={e=>sf("email",e.target.value)}/><Inp label="Team join code" placeholder="e.g. EAST24" value={f.code} onChange={e=>sf("code",e.target.value)}/><Inp label="Password (6+ characters)" type="password" value={f.pw} onChange={e=>sf("pw",e.target.value)}/><Btn onClick={joinTeam} disabled={busy}>{busy?"Joining…":"Join Team"}</Btn></>}
+      {tab==="player"&&<><Inp label="Your name" placeholder="Your name" value={f.name} onChange={e=>sf("name",e.target.value)}/><Inp label="Email" type="email" placeholder="you@email.com" value={f.email} onChange={e=>sf("email",e.target.value)}/><Sel label="Grade" value={f.grade} onChange={e=>sf("grade",e.target.value)}><option value="">Select grade</option>{GRADES.map(g=><option key={g} value={g}>{g}</option>)}</Sel><Inp label="Team join code" placeholder="e.g. EAST24" value={f.code} onChange={e=>sf("code",e.target.value)}/><Inp label="Password (6+ characters)" type="password" value={f.pw} onChange={e=>sf("pw",e.target.value)}/><Btn onClick={joinTeam} disabled={busy}>{busy?"Joining…":"Join Team"}</Btn></>}
     </div>
   );
 }
@@ -678,15 +679,32 @@ function CoachOverview({state,me,selectedTeamId,onPostAnn,onUnpin,onLogout,onRep
 // ─── Coach: Players ───────────────────────────────────────────────────────────
 
 function CoachPlayers({state,selectedTeamId}){
-  const players=Object.values(state.users).filter(u=>u.teamId===selectedTeamId&&u.role==="player").sort((a,b)=>(b.streak||0)-(a.streak||0));
+  const allPlayers=Object.values(state.users).filter(u=>u.teamId===selectedTeamId&&u.role==="player");
+  const gradeOptions=[...new Set(allPlayers.map(p=>p.grade).filter(Boolean))].sort((a,b)=>GRADES.indexOf(a)-GRADES.indexOf(b));
+  const[gradeFilter,setGradeFilter]=useState("all");
+  const players=allPlayers.filter(p=>gradeFilter==="all"||p.grade===gradeFilter).sort((a,b)=>(b.streak||0)-(a.streak||0));
   return(
     <div style={scroll}>
+      <Card>
+        <Btwn style={{gap:12}}>
+          <div>
+            <div style={{fontWeight:700}}>Filter Players</div>
+            <div style={{fontSize:12,color:C.sub,marginTop:2}}>{players.length} of {allPlayers.length} player{allPlayers.length!==1?"s":""} shown</div>
+          </div>
+          <div style={{width:150}}>
+            <Sel label="Grade" value={gradeFilter} onChange={e=>setGradeFilter(e.target.value)}>
+              <option value="all">All grades</option>
+              {gradeOptions.map(g=><option key={g} value={g}>{g}</option>)}
+            </Sel>
+          </div>
+        </Btwn>
+      </Card>
       {players.map(p=>{const since=daysSince(p.lastLog);const inactive=since>3;const pb=state.badges[p.id]||[];return(
         <Card key={p.id} style={{border:inactive?`1.5px solid ${C.red}60`:`1.5px solid ${C.border}`}}>
           <Row style={{marginBottom:10}}>
             <Av name={p.name} size={44}/>
             <div style={{flex:1,minWidth:0}}>
-              <Btwn><div style={{fontWeight:700,fontSize:15}}>{p.name}</div>{inactive?<Pill text="⚠ Inactive" color={C.red}/>:<Pill text="✓ Active" color={C.green}/>}</Btwn>
+              <Btwn><Row style={{gap:6}}><div style={{fontWeight:700,fontSize:15}}>{p.name}</div>{p.grade&&<Pill text={p.grade} color={C.navy}/>}</Row>{inactive?<Pill text="⚠ Inactive" color={C.red}/>:<Pill text="✓ Active" color={C.green}/>}</Btwn>
               <div style={{fontSize:12,color:C.sub,marginTop:3}}>🔥 {p.streak||0}d streak · Last: {p.lastLog?`${since}d ago`:"never"}</div>
             </div>
           </Row>
@@ -694,10 +712,11 @@ function CoachPlayers({state,selectedTeamId}){
           {pb.length>0&&<Row style={{gap:8}}>{pb.map(b=><span key={b} title={BADGES_META[b]?.label} style={{fontSize:18}}>{BADGES_META[b]?.icon}</span>)}</Row>}
         </Card>
       );})}
-      {players.length===0&&<div style={{textAlign:"center",color:C.sub,marginTop:40,fontSize:14}}>No players yet. Share your join code!</div>}
+      {players.length===0&&<div style={{textAlign:"center",color:C.sub,marginTop:40,fontSize:14}}>{allPlayers.length===0?"No players yet. Share your join code!":"No players match this grade filter."}</div>}
     </div>
   );
 }
+
 
 // ─── Coach: Goals ─────────────────────────────────────────────────────────────
 
