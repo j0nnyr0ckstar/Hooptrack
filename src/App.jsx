@@ -12,6 +12,7 @@ const SHOT_LOCATIONS = [
   "Mid-Range Top","Corner 3 (Left)","Corner 3 (Right)","Above the Break 3",
 ];
 const REACTIONS = ["🔥","💪","❤️","👏","⭐","🏀"];
+const GRADES = ["9th Grade","10th Grade","11th Grade","12th Grade","Alumni"];
 const BADGES_META = {
   first_log:  { icon:"🏀", label:"First Log",    desc:"Logged your first workout" },
   streak_3:   { icon:"🔥", label:"3-Day Streak", desc:"3 days in a row" },
@@ -28,7 +29,6 @@ const C = {
   green:"#10B981", red:"#EF4444",
 };
 const AV_BG = ["#4F46E5","#F97316","#10B981","#8B5CF6","#EF4444","#06B6D4","#F59E0B","#EC4899"];
-const GRADES = ["3rd","4th","5th","6th","7th","8th","9th","10th","11th","12th"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -48,7 +48,7 @@ function xWorkout(w) {
   for (const r of w.reactions||[]) { if (!reactions[r.emoji]) reactions[r.emoji]=[]; reactions[r.emoji].push(r.user_id); }
   return { id:w.id, userId:w.user_id, teamId:w.team_id, date:w.date, dribble:w.dribble||0, note:w.note||"", shots:(w.shots||[]).map(s=>({type:s.type,location:s.location,cond:s.cond||"",made:s.made||0,attempted:s.attempted||0})), reactions, comments:(w.comments||[]).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(c=>({uid:c.user_id,text:c.text,date:c.date})) };
 }
-function xUser(u) { return {id:u.id,name:u.name,role:u.role,teamId:u.team_id,grade:u.grade||"",streak:u.streak||0,lastLog:u.last_log}; }
+function xUser(u) { return {id:u.id,name:u.name,role:u.role,teamId:u.team_id,streak:u.streak||0,lastLog:u.last_log,grade:u.grade||""}; }
 function xGoal(g) { return {id:g.id,type:g.type,shotType:g.shot_type,target:g.target,period:g.period,label:g.label,playerId:g.player_id}; }
 function groupBadges(badges) { const g={}; for (const b of badges||[]) { if (!g[b.user_id]) g[b.user_id]=[]; g[b.user_id].push(b.badge_id); } return g; }
 
@@ -70,166 +70,45 @@ const scroll={padding:"12px 16px 100px",overflowY:"auto",maxHeight:"calc(100vh -
 
 // ─── Report Generators ────────────────────────────────────────────────────────
 
-function generateTeamReport(state, selectedTeamId) {
-  const team = state.teams[selectedTeamId];
-  const players = Object.values(state.users).filter(u=>u.teamId===selectedTeamId&&u.role==="player");
-  const date = new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
-  const totalShots = players.reduce((s,p)=>s+getTotalShots(state.workouts,p.id),0);
-  const totalSessions = state.workouts.filter(w=>w.teamId===selectedTeamId).length;
-  const activeCount = players.filter(p=>daysSince(p.lastLog)<=3).length;
-
-  const playerRows = players
-    .sort((a,b)=>getTotalShots(state.workouts,b.id)-getTotalShots(state.workouts,a.id))
-    .map((p,i)=>{
-      const shots=getTotalShots(state.workouts,p.id);
-      const dribble=getTotalDribble(state.workouts,p.id);
-      const sessions=state.workouts.filter(w=>w.userId===p.id).length;
-      const badges=(state.badges[p.id]||[]).map(b=>BADGES_META[b]?.icon||"").join(" ");
-      const active=daysSince(p.lastLog)<=3;
-      return `<tr style="border-bottom:1px solid #f1f5f9;">
-        <td style="padding:14px 12px;font-weight:600;color:#0f172a;">${i+1}. ${p.name}</td>
-        <td style="padding:14px 12px;text-align:center;color:#f97316;font-weight:700;">${shots}</td>
-        <td style="padding:14px 12px;text-align:center;color:#4f46e5;font-weight:600;">${dribble}m</td>
-        <td style="padding:14px 12px;text-align:center;font-weight:600;">${p.streak||0} 🔥</td>
-        <td style="padding:14px 12px;text-align:center;color:#64748b;">${sessions}</td>
-        <td style="padding:14px 12px;text-align:center;font-size:16px;">${badges||"—"}</td>
-        <td style="padding:14px 12px;text-align:center;"><span style="background:${active?"#dcfce7":"#fee2e2"};color:${active?"#166534":"#991b1b"};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">${active?"Active":`${daysSince(p.lastLog)}d ago`}</span></td>
-      </tr>`;
-    }).join("");
-
+function generateTeamReport(state,selectedTeamId){
+  const team=state.teams[selectedTeamId];
+  const players=Object.values(state.users).filter(u=>u.teamId===selectedTeamId&&u.role==="player");
+  const date=new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
+  const totalShots=players.reduce((s,p)=>s+getTotalShots(state.workouts,p.id),0);
+  const totalSessions=state.workouts.filter(w=>w.teamId===selectedTeamId).length;
+  const activeCount=players.filter(p=>daysSince(p.lastLog)<=3).length;
+  const playerRows=players.sort((a,b)=>getTotalShots(state.workouts,b.id)-getTotalShots(state.workouts,a.id)).map((p,i)=>{
+    const shots=getTotalShots(state.workouts,p.id);
+    const dribble=getTotalDribble(state.workouts,p.id);
+    const sessions=state.workouts.filter(w=>w.userId===p.id).length;
+    const badges=(state.badges[p.id]||[]).map(b=>BADGES_META[b]?.icon||"").join(" ");
+    const active=daysSince(p.lastLog)<=3;
+    return `<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:14px 12px;font-weight:600;color:#0f172a;">${i+1}. ${p.name}</td><td style="padding:14px 12px;text-align:center;color:#64748b;font-size:13px;">${p.grade||"—"}</td><td style="padding:14px 12px;text-align:center;color:#f97316;font-weight:700;">${shots}</td><td style="padding:14px 12px;text-align:center;color:#4f46e5;font-weight:600;">${dribble}m</td><td style="padding:14px 12px;text-align:center;font-weight:600;">${p.streak||0} 🔥</td><td style="padding:14px 12px;text-align:center;color:#64748b;">${sessions}</td><td style="padding:14px 12px;text-align:center;font-size:16px;">${badges||"—"}</td><td style="padding:14px 12px;text-align:center;"><span style="background:${active?"#dcfce7":"#fee2e2"};color:${active?"#166534":"#991b1b"};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;">${active?"Active":`${daysSince(p.lastLog)}d ago`}</span></td></tr>`;
+  }).join("");
   const goalRows=(team.goals||[]).map(goal=>{
     const totals=players.map(p=>goal.type==="dribbling"?getWeeklyDribble(state.workouts,p.id):getWeeklyShots(state.workouts,p.id,goal.shotType));
     const teamTotal=totals.reduce((s,v)=>s+v,0);
     const pct=Math.min(100,Math.round((teamTotal/((goal.target*players.length)||1))*100));
-    return `<div style="margin-bottom:18px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-weight:600;color:#0f172a;">${goal.label}</span>
-        <span style="font-size:13px;color:#64748b;">${teamTotal} / ${goal.target*players.length} total · ${pct}%</span>
-      </div>
-      <div style="background:#f1f5f9;border-radius:99px;height:10px;overflow:hidden;">
-        <div style="width:${pct}%;background:${pct>=100?"#10b981":"#f97316"};height:100%;border-radius:99px;"></div>
-      </div>
-    </div>`;
+    return `<div style="margin-bottom:18px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><span style="font-weight:600;color:#0f172a;">${goal.label}</span><span style="font-size:13px;color:#64748b;">${teamTotal} / ${goal.target*players.length} total · ${pct}%</span></div><div style="background:#f1f5f9;border-radius:99px;height:10px;overflow:hidden;"><div style="width:${pct}%;background:${pct>=100?"#10b981":"#f97316"};height:100%;border-radius:99px;"></div></div></div>`;
   }).join("");
-
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>${team.name} — Team Report</title>
-  <style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f8fafc;color:#0f172a;}@media print{body{background:white;}.no-print{display:none;}}</style>
-  </head><body><div style="max-width:860px;margin:0 auto;padding:40px 32px;">
-  <div class="no-print" style="background:#4f46e5;color:white;padding:12px 20px;border-radius:12px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:center;">
-    <span style="font-weight:600;">🏀 HoopTrack Report — ready to print or save as PDF</span>
-    <button onclick="window.print()" style="background:white;color:#4f46e5;border:none;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer;font-size:14px;">Print / Save PDF</button>
-  </div>
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;">
-    <div><div style="font-size:28px;font-weight:800;color:#f97316;">🏀 ${team.name}</div><div style="font-size:15px;color:#64748b;margin-top:4px;">Team Overview Report</div></div>
-    <div style="text-align:right;color:#64748b;font-size:13px;">Generated ${date}</div>
-  </div>
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:36px;">
-    ${[["Total Players",players.length,"#4f46e5"],["Active (3 days)",activeCount,"#10b981"],["Total Shots",totalShots,"#f97316"],["Total Sessions",totalSessions,"#8b5cf6"]].map(([l,v,c])=>`
-    <div style="background:white;border-radius:14px;padding:20px;border:1.5px solid #e2e8f0;text-align:center;">
-      <div style="font-size:30px;font-weight:800;color:${c};">${v}</div>
-      <div style="font-size:12px;color:#64748b;margin-top:4px;font-weight:500;">${l}</div>
-    </div>`).join("")}
-  </div>
-  <div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;margin-bottom:28px;overflow:hidden;">
-    <div style="padding:18px 20px;border-bottom:1.5px solid #e2e8f0;"><div style="font-size:16px;font-weight:700;">Player Breakdown</div></div>
-    <table style="width:100%;border-collapse:collapse;">
-      <thead><tr style="background:#f8fafc;">
-        ${["Player","Shots","Dribble","Streak","Sessions","Badges","Status"].map(h=>`<th style="padding:12px;text-align:${h==="Player"?"left":"center"};font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">${h}</th>`).join("")}
-      </tr></thead>
-      <tbody>${playerRows}</tbody>
-    </table>
-    ${players.length===0?'<div style="padding:32px;text-align:center;color:#64748b;">No players yet.</div>':""}
-  </div>
-  ${(team.goals||[]).length>0?`<div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;padding:20px;margin-bottom:28px;"><div style="font-size:16px;font-weight:700;margin-bottom:20px;">Team Goal Progress (This Week)</div>${goalRows}</div>`:""}
-  <div style="text-align:center;color:#94a3b8;font-size:12px;margin-top:32px;">Generated by HoopTrack · hooptrack.app</div>
-  </div></body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>${team.name} — Team Report</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f8fafc;color:#0f172a;}@media print{body{background:white;}.no-print{display:none;}}</style></head><body><div style="max-width:900px;margin:0 auto;padding:40px 32px;"><div class="no-print" style="background:#4f46e5;color:white;padding:12px 20px;border-radius:12px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:center;"><span style="font-weight:600;">🏀 HoopTrack Report — ready to print or save as PDF</span><button onclick="window.print()" style="background:white;color:#4f46e5;border:none;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer;font-size:14px;">Print / Save PDF</button></div><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;"><div><div style="font-size:28px;font-weight:800;color:#f97316;">🏀 ${team.name}</div><div style="font-size:15px;color:#64748b;margin-top:4px;">Team Overview Report</div></div><div style="text-align:right;color:#64748b;font-size:13px;">Generated ${date}</div></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:36px;">${[["Total Players",players.length,"#4f46e5"],["Active (3 days)",activeCount,"#10b981"],["Total Shots",totalShots,"#f97316"],["Total Sessions",totalSessions,"#8b5cf6"]].map(([l,v,c])=>`<div style="background:white;border-radius:14px;padding:20px;border:1.5px solid #e2e8f0;text-align:center;"><div style="font-size:30px;font-weight:800;color:${c};">${v}</div><div style="font-size:12px;color:#64748b;margin-top:4px;font-weight:500;">${l}</div></div>`).join("")}</div><div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;margin-bottom:28px;overflow:hidden;"><div style="padding:18px 20px;border-bottom:1.5px solid #e2e8f0;"><div style="font-size:16px;font-weight:700;">Player Breakdown</div></div><table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#f8fafc;">${["Player","Grade","Shots","Dribble","Streak","Sessions","Badges","Status"].map(h=>`<th style="padding:12px;text-align:${h==="Player"?"left":"center"};font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">${h}</th>`).join("")}</tr></thead><tbody>${playerRows}</tbody></table>${players.length===0?'<div style="padding:32px;text-align:center;color:#64748b;">No players yet.</div>':""}</div>${(team.goals||[]).length>0?`<div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;padding:20px;margin-bottom:28px;"><div style="font-size:16px;font-weight:700;margin-bottom:20px;">Team Goal Progress (This Week)</div>${goalRows}</div>`:""}<div style="text-align:center;color:#94a3b8;font-size:12px;margin-top:32px;">Generated by HoopTrack · hooptrack.app</div></div></body></html>`;
 }
 
-function generatePlayerReport(state, playerId, selectedTeamId) {
-  const player = state.users[playerId];
-  const team = state.teams[selectedTeamId];
-  const ws = state.workouts.filter(w=>w.userId===playerId).sort((a,b)=>b.date.localeCompare(a.date));
-  const badges = state.badges[playerId]||[];
-  const total = getTotalShots(state.workouts,playerId);
-  const dTotal = getTotalDribble(state.workouts,playerId);
-  const date = new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
+function generatePlayerReport(state,playerId,selectedTeamId){
+  const player=state.users[playerId];
+  const team=state.teams[selectedTeamId];
+  const ws=state.workouts.filter(w=>w.userId===playerId).sort((a,b)=>b.date.localeCompare(a.date));
+  const badges=state.badges[playerId]||[];
+  const total=getTotalShots(state.workouts,playerId);
+  const dTotal=getTotalDribble(state.workouts,playerId);
+  const date=new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
   const allGoals=[...(team?.goals||[]),...(state.playerGoals?.[playerId]||[])];
   const breakdown=SHOT_TYPES.map(t=>({type:t,made:getShotsByType(state.workouts,playerId,t)})).filter(s=>s.made>0).sort((a,b)=>b.made-a.made);
   const bMax=breakdown[0]?.made||1;
-
-  const breakdownRows=breakdown.map(s=>`
-    <div style="margin-bottom:14px;">
-      <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
-        <span style="font-size:14px;color:#0f172a;">${s.type}</span>
-        <span style="font-weight:700;font-size:14px;color:#f97316;">${s.made} made</span>
-      </div>
-      <div style="background:#f1f5f9;border-radius:99px;height:9px;overflow:hidden;">
-        <div style="width:${Math.round((s.made/bMax)*100)}%;background:#f97316;height:100%;border-radius:99px;"></div>
-      </div>
-    </div>`).join("");
-
-  const goalRows=allGoals.map(goal=>{
-    const prog=goal.type==="dribbling"?getWeeklyDribble(state.workouts,playerId):getWeeklyShots(state.workouts,playerId,goal.shotType);
-    const pct=Math.min(100,Math.round((prog/goal.target)*100));
-    const done=prog>=goal.target;
-    return `<div style="margin-bottom:16px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
-        <span style="font-size:14px;font-weight:600;">${goal.label} ${done?"✅":""}</span>
-        <span style="font-size:13px;color:#64748b;">${prog} / ${goal.target} · ${pct}%</span>
-      </div>
-      <div style="background:#f1f5f9;border-radius:99px;height:9px;overflow:hidden;">
-        <div style="width:${pct}%;background:${done?"#10b981":"#f97316"};height:100%;border-radius:99px;"></div>
-      </div>
-    </div>`;
-  }).join("");
-
-  const sessionRows=ws.slice(0,10).map(w=>{
-    const made=w.shots.reduce((s,sh)=>s+sh.made,0);
-    const att=w.shots.reduce((s,sh)=>s+sh.attempted,0);
-    const types=[...new Set(w.shots.map(s=>s.type))].join(", ");
-    return `<tr style="border-bottom:1px solid #f1f5f9;">
-      <td style="padding:12px;color:#64748b;font-size:13px;">${w.date}</td>
-      <td style="padding:12px;font-weight:600;color:#f97316;text-align:center;">${made}/${att}</td>
-      <td style="padding:12px;text-align:center;color:#4f46e5;">${w.dribble}m</td>
-      <td style="padding:12px;font-size:12px;color:#64748b;">${types||"—"}</td>
-      <td style="padding:12px;font-size:12px;color:#7c3aed;font-style:italic;">${w.note||""}</td>
-    </tr>`;
-  }).join("");
-
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>${player.name} — Player Report</title>
-  <style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f8fafc;color:#0f172a;}@media print{body{background:white;}.no-print{display:none;}}</style>
-  </head><body><div style="max-width:860px;margin:0 auto;padding:40px 32px;">
-  <div class="no-print" style="background:#4f46e5;color:white;padding:12px 20px;border-radius:12px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:center;">
-    <span style="font-weight:600;">🏀 HoopTrack Report — ready to print or save as PDF</span>
-    <button onclick="window.print()" style="background:white;color:#4f46e5;border:none;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer;font-size:14px;">Print / Save PDF</button>
-  </div>
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;">
-    <div><div style="font-size:28px;font-weight:800;color:#f97316;">🏀 ${player.name}</div><div style="font-size:15px;color:#64748b;margin-top:4px;">${team?.name} · Player Report</div></div>
-    <div style="text-align:right;color:#64748b;font-size:13px;">Generated ${date}</div>
-  </div>
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px;">
-    ${[["Total Shots",total,"#f97316"],["Sessions",ws.length,"#4f46e5"],["Day Streak",`${player.streak||0} 🔥`,"#10b981"],["Dribble Min",`${dTotal}m`,"#8b5cf6"]].map(([l,v,c])=>`
-    <div style="background:white;border-radius:14px;padding:20px;border:1.5px solid #e2e8f0;text-align:center;">
-      <div style="font-size:28px;font-weight:800;color:${c};">${v}</div>
-      <div style="font-size:12px;color:#64748b;margin-top:4px;font-weight:500;">${l}</div>
-    </div>`).join("")}
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
-    ${breakdown.length>0?`<div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;padding:20px;"><div style="font-size:15px;font-weight:700;margin-bottom:18px;">Shot Breakdown</div>${breakdownRows}</div>`:""}
-    ${allGoals.length>0?`<div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;padding:20px;"><div style="font-size:15px;font-weight:700;margin-bottom:18px;">Weekly Goals</div>${goalRows}</div>`:""}
-  </div>
-  ${badges.length>0?`<div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;padding:20px;margin-bottom:24px;"><div style="font-size:15px;font-weight:700;margin-bottom:16px;">Badges Earned</div><div style="display:flex;gap:20px;flex-wrap:wrap;">${badges.map(b=>`<div style="text-align:center;"><div style="font-size:28px;">${BADGES_META[b]?.icon}</div><div style="font-size:11px;color:#64748b;margin-top:4px;">${BADGES_META[b]?.label}</div></div>`).join("")}</div></div>`:""}
-  ${ws.length>0?`<div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;overflow:hidden;margin-bottom:28px;">
-    <div style="padding:18px 20px;border-bottom:1.5px solid #e2e8f0;"><div style="font-size:15px;font-weight:700;">Recent Sessions</div></div>
-    <table style="width:100%;border-collapse:collapse;">
-      <thead><tr style="background:#f8fafc;">
-        ${["Date","Shots","Dribble","Shot Types","Note"].map(h=>`<th style="padding:10px 12px;text-align:${h==="Date"||h==="Shot Types"||h==="Note"?"left":"center"};font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">${h}</th>`).join("")}
-      </tr></thead>
-      <tbody>${sessionRows}</tbody>
-    </table>
-  </div>`:""}
-  <div style="text-align:center;color:#94a3b8;font-size:12px;margin-top:32px;">Generated by HoopTrack · hooptrack.app</div>
-  </div></body></html>`;
+  const breakdownRows=breakdown.map(s=>`<div style="margin-bottom:14px;"><div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span style="font-size:14px;color:#0f172a;">${s.type}</span><span style="font-weight:700;font-size:14px;color:#f97316;">${s.made} made</span></div><div style="background:#f1f5f9;border-radius:99px;height:9px;overflow:hidden;"><div style="width:${Math.round((s.made/bMax)*100)}%;background:#f97316;height:100%;border-radius:99px;"></div></div></div>`).join("");
+  const goalRows=allGoals.map(goal=>{const prog=goal.type==="dribbling"?getWeeklyDribble(state.workouts,playerId):getWeeklyShots(state.workouts,playerId,goal.shotType);const pct=Math.min(100,Math.round((prog/goal.target)*100));const done=prog>=goal.target;return `<div style="margin-bottom:16px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><span style="font-size:14px;font-weight:600;">${goal.label} ${done?"✅":""}</span><span style="font-size:13px;color:#64748b;">${prog} / ${goal.target} · ${pct}%</span></div><div style="background:#f1f5f9;border-radius:99px;height:9px;overflow:hidden;"><div style="width:${pct}%;background:${done?"#10b981":"#f97316"};height:100%;border-radius:99px;"></div></div></div>`;}).join("");
+  const sessionRows=ws.slice(0,10).map(w=>{const made=w.shots.reduce((s,sh)=>s+sh.made,0);const att=w.shots.reduce((s,sh)=>s+sh.attempted,0);const types=[...new Set(w.shots.map(s=>s.type))].join(", ");return `<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:12px;color:#64748b;font-size:13px;">${w.date}</td><td style="padding:12px;font-weight:600;color:#f97316;text-align:center;">${made}/${att}</td><td style="padding:12px;text-align:center;color:#4f46e5;">${w.dribble}m</td><td style="padding:12px;font-size:12px;color:#64748b;">${types||"—"}</td><td style="padding:12px;font-size:12px;color:#7c3aed;font-style:italic;">${w.note||""}</td></tr>`;}).join("");
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>${player.name} — Player Report</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f8fafc;color:#0f172a;}@media print{body{background:white;}.no-print{display:none;}}</style></head><body><div style="max-width:860px;margin:0 auto;padding:40px 32px;"><div class="no-print" style="background:#4f46e5;color:white;padding:12px 20px;border-radius:12px;margin-bottom:28px;display:flex;justify-content:space-between;align-items:center;"><span style="font-weight:600;">🏀 HoopTrack Report — ready to print or save as PDF</span><button onclick="window.print()" style="background:white;color:#4f46e5;border:none;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer;font-size:14px;">Print / Save PDF</button></div><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;"><div><div style="font-size:28px;font-weight:800;color:#f97316;">🏀 ${player.name}</div><div style="font-size:15px;color:#64748b;margin-top:4px;">${team?.name} · ${player.grade||""} · Player Report</div></div><div style="text-align:right;color:#64748b;font-size:13px;">Generated ${date}</div></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px;">${[["Total Shots",total,"#f97316"],["Sessions",ws.length,"#4f46e5"],["Day Streak",`${player.streak||0} 🔥`,"#10b981"],["Dribble Min",`${dTotal}m`,"#8b5cf6"]].map(([l,v,c])=>`<div style="background:white;border-radius:14px;padding:20px;border:1.5px solid #e2e8f0;text-align:center;"><div style="font-size:28px;font-weight:800;color:${c};">${v}</div><div style="font-size:12px;color:#64748b;margin-top:4px;font-weight:500;">${l}</div></div>`).join("")}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">${breakdown.length>0?`<div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;padding:20px;"><div style="font-size:15px;font-weight:700;margin-bottom:18px;">Shot Breakdown</div>${breakdownRows}</div>`:""}${allGoals.length>0?`<div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;padding:20px;"><div style="font-size:15px;font-weight:700;margin-bottom:18px;">Weekly Goals</div>${goalRows}</div>`:""}</div>${badges.length>0?`<div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;padding:20px;margin-bottom:24px;"><div style="font-size:15px;font-weight:700;margin-bottom:16px;">Badges Earned</div><div style="display:flex;gap:20px;flex-wrap:wrap;">${badges.map(b=>`<div style="text-align:center;"><div style="font-size:28px;">${BADGES_META[b]?.icon}</div><div style="font-size:11px;color:#64748b;margin-top:4px;">${BADGES_META[b]?.label}</div></div>`).join("")}</div></div>`:""}${ws.length>0?`<div style="background:white;border-radius:16px;border:1.5px solid #e2e8f0;overflow:hidden;margin-bottom:28px;"><div style="padding:18px 20px;border-bottom:1.5px solid #e2e8f0;"><div style="font-size:15px;font-weight:700;">Recent Sessions</div></div><table style="width:100%;border-collapse:collapse;"><thead><tr style="background:#f8fafc;">${["Date","Shots","Dribble","Shot Types","Note"].map(h=>`<th style="padding:10px 12px;text-align:${h==="Date"||h==="Shot Types"||h==="Note"?"left":"center"};font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">${h}</th>`).join("")}</tr></thead><tbody>${sessionRows}</tbody></table></div>`:""}<div style="text-align:center;color:#94a3b8;font-size:12px;margin-top:32px;">Generated by HoopTrack · hooptrack.app</div></div></body></html>`;
 }
 
 // ─── Reports Modal ────────────────────────────────────────────────────────────
@@ -247,10 +126,7 @@ function ReportsModal({state,selectedTeamId,onClose}){
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:24}}>
       <div style={{background:C.card,borderRadius:20,padding:24,width:"100%",maxWidth:380}}>
-        <Btwn style={{marginBottom:20}}>
-          <div style={{fontWeight:800,fontSize:18}}>Export Report</div>
-          <button onClick={onClose} style={{background:"transparent",border:"none",fontSize:22,cursor:"pointer",color:C.sub,lineHeight:1}}>✕</button>
-        </Btwn>
+        <Btwn style={{marginBottom:20}}><div style={{fontWeight:800,fontSize:18}}>Export Report</div><button onClick={onClose} style={{background:"transparent",border:"none",fontSize:22,cursor:"pointer",color:C.sub,lineHeight:1}}>✕</button></Btwn>
         <div style={{marginBottom:16}}>
           <div style={{fontSize:12,color:C.sub,marginBottom:8,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>Report Type</div>
           <div style={{display:"flex",gap:8}}>
@@ -259,15 +135,8 @@ function ReportsModal({state,selectedTeamId,onClose}){
             ))}
           </div>
         </div>
-        {type==="player"&&(
-          <Sel label="Select player" value={playerId} onChange={e=>setPlayerId(e.target.value)}>
-            {players.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-            {players.length===0&&<option disabled>No players yet</option>}
-          </Sel>
-        )}
-        <div style={{background:C.muted,borderRadius:12,padding:"12px 14px",marginBottom:16,fontSize:13,color:C.sub,lineHeight:1.6}}>
-          Opens in a new tab — use <strong>Print</strong> or <strong>Save as PDF</strong> from your browser to export.
-        </div>
+        {type==="player"&&<Sel label="Select player" value={playerId} onChange={e=>setPlayerId(e.target.value)}>{players.map(p=><option key={p.id} value={p.id}>{p.name}{p.grade?` · ${p.grade}`:""}</option>)}{players.length===0&&<option disabled>No players yet</option>}</Sel>}
+        <div style={{background:C.muted,borderRadius:12,padding:"12px 14px",marginBottom:16,fontSize:13,color:C.sub,lineHeight:1.6}}>Opens in a new tab — use <strong>Print</strong> or <strong>Save as PDF</strong> from your browser to export.</div>
         <div style={{display:"flex",gap:8}}>
           <Btn color={C.navy} onClick={generate} disabled={type==="player"&&!playerId}>Generate Report</Btn>
           <Btn outline color={C.sub} onClick={onClose}>Cancel</Btn>
@@ -281,11 +150,13 @@ function ReportsModal({state,selectedTeamId,onClose}){
 
 function Auth() {
   const[tab,setTab]=useState("login");
-  const[f,setF]=useState({email:"",name:"",teamName:"",code:"",grade:"",pw:""});
+  const[f,setF]=useState({email:"",name:"",teamName:"",code:"",pw:"",grade:GRADES[0]});
   const[err,setErr]=useState("");
   const[busy,setBusy]=useState(false);
   const sf=(k,v)=>setF(x=>({...x,[k]:v}));
+
   const login=async()=>{setBusy(true);setErr("");const{error}=await supabase.auth.signInWithPassword({email:f.email,password:f.pw});if(error)setErr(error.message);setBusy(false);};
+
   const createTeam=async()=>{
     if(!f.email||!f.name||!f.teamName||!f.pw)return setErr("Fill in all fields.");
     setBusy(true);setErr("");
@@ -298,16 +169,18 @@ function Auth() {
     await supabase.from("coach_teams").insert({coach_id:data.user.id,team_id:team.id});
     setBusy(false);
   };
+
   const joinTeam=async()=>{
-    if(!f.email||!f.name||!f.code||!f.grade||!f.pw)return setErr("Fill in all fields.");
+    if(!f.email||!f.name||!f.code||!f.pw)return setErr("Fill in all fields.");
     setBusy(true);setErr("");
     const{data:team}=await supabase.from("teams").select("*").eq("code",f.code.trim().toUpperCase()).single();
     if(!team){setErr("Team code not found. Check with your coach.");setBusy(false);return;}
     const{data,error}=await supabase.auth.signUp({email:f.email,password:f.pw});
     if(error){setErr(error.message);setBusy(false);return;}
-    await supabase.from("users").insert({id:data.user.id,name:f.name,role:"player",team_id:team.id,grade:f.grade,streak:0});
+    await supabase.from("users").insert({id:data.user.id,name:f.name,role:"player",team_id:team.id,streak:0,grade:f.grade});
     setBusy(false);
   };
+
   const TABS=[["login","Sign In"],["coach","New Coach"],["player","Join Team"]];
   return(
     <div style={{background:C.dark,minHeight:"100vh",display:"flex",flexDirection:"column",justifyContent:"center",padding:"32px 24px",fontFamily:"system-ui,-apple-system,sans-serif",color:C.text}}>
@@ -322,7 +195,16 @@ function Auth() {
       {err&&<div style={{background:"#FEF2F2",color:"#B91C1C",borderRadius:12,padding:"10px 14px",marginBottom:14,fontSize:13,border:"1px solid #FECACA"}}>{err}</div>}
       {tab==="login"&&<><Inp label="Email" type="email" placeholder="you@email.com" value={f.email} onChange={e=>sf("email",e.target.value)}/><Inp label="Password" type="password" value={f.pw} onChange={e=>sf("pw",e.target.value)}/><Btn onClick={login} disabled={busy}>{busy?"Signing in…":"Sign In"}</Btn></>}
       {tab==="coach"&&<><Inp label="Your name" placeholder="Coach name" value={f.name} onChange={e=>sf("name",e.target.value)}/><Inp label="Email" type="email" placeholder="you@email.com" value={f.email} onChange={e=>sf("email",e.target.value)}/><Inp label="Team name" placeholder='e.g. "Eastside Ballers"' value={f.teamName} onChange={e=>sf("teamName",e.target.value)}/><Inp label="Password (6+ characters)" type="password" value={f.pw} onChange={e=>sf("pw",e.target.value)}/><Btn onClick={createTeam} disabled={busy}>{busy?"Creating…":"Create Team"}</Btn></>}
-      {tab==="player"&&<><Inp label="Your name" placeholder="Your name" value={f.name} onChange={e=>sf("name",e.target.value)}/><Inp label="Email" type="email" placeholder="you@email.com" value={f.email} onChange={e=>sf("email",e.target.value)}/><Sel label="Grade" value={f.grade} onChange={e=>sf("grade",e.target.value)}><option value="">Select grade</option>{GRADES.map(g=><option key={g} value={g}>{g}</option>)}</Sel><Inp label="Team join code" placeholder="e.g. EAST24" value={f.code} onChange={e=>sf("code",e.target.value)}/><Inp label="Password (6+ characters)" type="password" value={f.pw} onChange={e=>sf("pw",e.target.value)}/><Btn onClick={joinTeam} disabled={busy}>{busy?"Joining…":"Join Team"}</Btn></>}
+      {tab==="player"&&<>
+        <Inp label="Your name" placeholder="Your name" value={f.name} onChange={e=>sf("name",e.target.value)}/>
+        <Inp label="Email" type="email" placeholder="you@email.com" value={f.email} onChange={e=>sf("email",e.target.value)}/>
+        <Inp label="Team join code" placeholder="e.g. EAST24" value={f.code} onChange={e=>sf("code",e.target.value)}/>
+        <Sel label="Grade level" value={f.grade} onChange={e=>sf("grade",e.target.value)}>
+          {GRADES.map(g=><option key={g}>{g}</option>)}
+        </Sel>
+        <Inp label="Password (6+ characters)" type="password" value={f.pw} onChange={e=>sf("pw",e.target.value)}/>
+        <Btn onClick={joinTeam} disabled={busy}>{busy?"Joining…":"Join Team"}</Btn>
+      </>}
     </div>
   );
 }
@@ -363,8 +245,6 @@ function Header({title,sub,coachTeams,selectedTeamId,onSwitchTeam,onNewTeam}){
 
 function Nav({tabs,active,onChange}){return <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:C.dark,borderTop:`1px solid ${C.border}`,display:"flex",zIndex:100}}>{tabs.map(({id,label,icon})=><button key={id} onClick={()=>onChange(id)} style={{flex:1,border:"none",background:"transparent",padding:"10px 0 14px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,fontFamily:"inherit"}}><span style={{fontSize:20}}>{icon}</span><span style={{fontSize:10,color:active===id?C.orange:C.sub,fontWeight:active===id?700:400,transition:"color 0.2s"}}>{label}</span></button>)}</div>;}
 
-// ─── New Team Modal ───────────────────────────────────────────────────────────
-
 function NewTeamModal({onSave,onCancel}){
   const[name,setName]=useState("");
   const[busy,setBusy]=useState(false);
@@ -376,10 +256,7 @@ function NewTeamModal({onSave,onCancel}){
         <div style={{fontWeight:800,fontSize:18,marginBottom:16}}>Create New Team</div>
         {err&&<div style={{background:"#FEF2F2",color:"#B91C1C",borderRadius:10,padding:"8px 12px",marginBottom:12,fontSize:13}}>{err}</div>}
         <Inp label="Team name" placeholder='e.g. "JV Eagles"' value={name} onChange={e=>setName(e.target.value)}/>
-        <div style={{display:"flex",gap:8,marginTop:8}}>
-          <Btn color={C.green} onClick={save} disabled={busy}>{busy?"Creating…":"Create Team"}</Btn>
-          <Btn outline color={C.sub} onClick={onCancel}>Cancel</Btn>
-        </div>
+        <div style={{display:"flex",gap:8,marginTop:8}}><Btn color={C.green} onClick={save} disabled={busy}>{busy?"Creating…":"Create Team"}</Btn><Btn outline color={C.sub} onClick={onCancel}>Cancel</Btn></div>
       </div>
     </div>
   );
@@ -447,7 +324,7 @@ function WCard({w,state,me,onReact,onComment}){
     <Card>
       <Row style={{marginBottom:10}}>
         <Av name={user?.name} size={42}/>
-        <div style={{flex:1}}><div style={{fontWeight:700,fontSize:15}}>{user?.name}</div><div style={{fontSize:12,color:C.sub}}>{w.date}</div></div>
+        <div style={{flex:1}}><div style={{fontWeight:700,fontSize:15}}>{user?.name}</div><div style={{fontSize:12,color:C.sub}}>{w.date}{user?.grade?` · ${user.grade}`:""}</div></div>
         <div style={{display:"flex",gap:4}}>{(state.badges[w.userId]||[]).slice(0,2).map(b=><span key={b} title={BADGES_META[b]?.label} style={{fontSize:16}}>{BADGES_META[b]?.icon}</span>)}</div>
       </Row>
       {w.note?<div style={{fontSize:13,color:"#7C3AED",fontStyle:"italic",marginBottom:10,padding:"8px 12px",background:"#F5F3FF",borderRadius:10,border:"1px solid #DDD6FE"}}>"{w.note}"</div>:null}
@@ -509,7 +386,13 @@ function Leaderboard({state,me,selectedTeamId}){
             <div style={{fontSize:20,width:30,textAlign:"center",flexShrink:0}}>{idx<3?medals[idx]:`#${idx+1}`}</div>
             <Av name={p.name} size={38}/>
             <div style={{flex:1,minWidth:0}}>
-              <Btwn style={{marginBottom:5}}><Row style={{gap:6}}><span style={{fontWeight:700,fontSize:14}}>{p.name}</span>{isMe&&<Pill text="You"/>}</Row><Row style={{gap:4}}><span style={{fontWeight:800,fontSize:17,color:idx===0?"#FBBF24":C.text}}>{v}</span><span style={{fontSize:11,color:C.sub}}>{unit}</span></Row></Btwn>
+              <Btwn style={{marginBottom:5}}>
+                <div>
+                  <Row style={{gap:6}}><span style={{fontWeight:700,fontSize:14}}>{p.name}</span>{isMe&&<Pill text="You"/>}</Row>
+                  {p.grade&&<div style={{fontSize:11,color:C.sub,marginTop:2}}>{p.grade}</div>}
+                </div>
+                <Row style={{gap:4}}><span style={{fontWeight:800,fontSize:17,color:idx===0?"#FBBF24":C.text}}>{v}</span><span style={{fontSize:11,color:C.sub}}>{unit}</span></Row>
+              </Btwn>
               <Bar val={v} max={maxV} color={isMe?C.orange:C.navyMid}/>
             </div>
           </Row>
@@ -532,7 +415,10 @@ function PlayerHome({state,me,onLog}){
       <Card>
         <Row>
           <Av name={user?.name} size={50}/>
-          <div style={{flex:1}}><div style={{fontWeight:800,fontSize:17}}>Hey, {user?.name?.split(" ")[0]}! 👋</div><div style={{fontSize:13,color:C.sub}}>{team?.name}</div></div>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:800,fontSize:17}}>Hey, {user?.name?.split(" ")[0]}! 👋</div>
+            <div style={{fontSize:13,color:C.sub}}>{team?.name}{user?.grade?` · ${user.grade}`:""}</div>
+          </div>
           <div style={{textAlign:"center"}}><div style={{fontSize:22}}>🔥</div><div style={{fontWeight:800,color:C.orange,fontSize:17}}>{user?.streak||0}</div><div style={{fontSize:10,color:C.sub}}>day streak</div></div>
         </Row>
       </Card>
@@ -587,7 +473,7 @@ function Profile({state,me,onLogout}){
       <Card style={{textAlign:"center"}}>
         <div style={{display:"flex",justifyContent:"center",marginBottom:12}}><Av name={user?.name} size={64}/></div>
         <div style={{fontWeight:800,fontSize:20}}>{user?.name}</div>
-        <div style={{color:C.sub,fontSize:13,marginTop:2}}>{team?.name}</div>
+        <div style={{color:C.sub,fontSize:13,marginTop:2}}>{team?.name}{user?.grade?` · ${user.grade}`:""}</div>
         <div style={{display:"flex",justifyContent:"center",gap:28,marginTop:18}}>
           {[["Shots",total],["Sessions",ws.length],["Streak",`${user?.streak||0}🔥`],["Dribble",`${dTotal}m`]].map(([l,v])=>(
             <div key={l} style={{textAlign:"center"}}><div style={{fontWeight:800,fontSize:18,color:C.orange}}>{v}</div><div style={{fontSize:11,color:C.sub,marginTop:1}}>{l}</div></div>
@@ -678,45 +564,69 @@ function CoachOverview({state,me,selectedTeamId,onPostAnn,onUnpin,onLogout,onRep
 
 // ─── Coach: Players ───────────────────────────────────────────────────────────
 
-function CoachPlayers({state,selectedTeamId}){
-  const allPlayers=Object.values(state.users).filter(u=>u.teamId===selectedTeamId&&u.role==="player");
-  const gradeOptions=[...new Set(allPlayers.map(p=>p.grade).filter(Boolean))].sort((a,b)=>GRADES.indexOf(a)-GRADES.indexOf(b));
-  const[gradeFilter,setGradeFilter]=useState("all");
-  const players=allPlayers.filter(p=>gradeFilter==="all"||p.grade===gradeFilter).sort((a,b)=>(b.streak||0)-(a.streak||0));
+function CoachPlayers({state,selectedTeamId,onRemovePlayer}){
+  const allPlayers=Object.values(state.users).filter(u=>u.teamId===selectedTeamId&&u.role==="player").sort((a,b)=>(b.streak||0)-(a.streak||0));
+  const gradesOnTeam=["All",...GRADES.filter(g=>allPlayers.some(p=>p.grade===g))];
+  const[filter,setFilter]=useState("All");
+  const[confirmId,setConfirmId]=useState(null);
+  const players=filter==="All"?allPlayers:allPlayers.filter(p=>p.grade===filter);
+
   return(
     <div style={scroll}>
-      <Card>
-        <Btwn style={{gap:12}}>
-          <div>
-            <div style={{fontWeight:700}}>Filter Players</div>
-            <div style={{fontSize:12,color:C.sub,marginTop:2}}>{players.length} of {allPlayers.length} player{allPlayers.length!==1?"s":""} shown</div>
-          </div>
-          <div style={{width:150}}>
-            <Sel label="Grade" value={gradeFilter} onChange={e=>setGradeFilter(e.target.value)}>
-              <option value="all">All grades</option>
-              {gradeOptions.map(g=><option key={g} value={g}>{g}</option>)}
-            </Sel>
-          </div>
-        </Btwn>
-      </Card>
-      {players.map(p=>{const since=daysSince(p.lastLog);const inactive=since>3;const pb=state.badges[p.id]||[];return(
-        <Card key={p.id} style={{border:inactive?`1.5px solid ${C.red}60`:`1.5px solid ${C.border}`}}>
-          <Row style={{marginBottom:10}}>
-            <Av name={p.name} size={44}/>
-            <div style={{flex:1,minWidth:0}}>
-              <Btwn><Row style={{gap:6}}><div style={{fontWeight:700,fontSize:15}}>{p.name}</div>{p.grade&&<Pill text={p.grade} color={C.navy}/>}</Row>{inactive?<Pill text="⚠ Inactive" color={C.red}/>:<Pill text="✓ Active" color={C.green}/>}</Btwn>
-              <div style={{fontSize:12,color:C.sub,marginTop:3}}>🔥 {p.streak||0}d streak · Last: {p.lastLog?`${since}d ago`:"never"}</div>
+      {gradesOnTeam.length>2&&(
+        <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:10,marginBottom:12}}>
+          {gradesOnTeam.map(g=>(
+            <button key={g} onClick={()=>setFilter(g)} style={{background:filter===g?C.orange:C.card,color:filter===g?"#fff":C.sub,border:`1.5px solid ${filter===g?C.orange:C.border}`,borderRadius:10,padding:"7px 12px",fontWeight:600,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit",flexShrink:0,transition:"all 0.2s"}}>
+              {g}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {players.map(p=>{
+        const since=daysSince(p.lastLog);
+        const inactive=since>3;
+        const pb=state.badges[p.id]||[];
+        const confirming=confirmId===p.id;
+        return(
+          <Card key={p.id} style={{border:inactive?`1.5px solid ${C.red}60`:`1.5px solid ${C.border}`}}>
+            <Row style={{marginBottom:10}}>
+              <Av name={p.name} size={44}/>
+              <div style={{flex:1,minWidth:0}}>
+                <Btwn>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:15}}>{p.name}</div>
+                    {p.grade&&<div style={{fontSize:12,color:C.sub,marginTop:1}}>{p.grade}</div>}
+                  </div>
+                  {inactive?<Pill text="⚠ Inactive" color={C.red}/>:<Pill text="✓ Active" color={C.green}/>}
+                </Btwn>
+                <div style={{fontSize:12,color:C.sub,marginTop:3}}>🔥 {p.streak||0}d streak · Last: {p.lastLog?`${since}d ago`:"never"}</div>
+              </div>
+            </Row>
+            <div style={{display:"flex",gap:16,marginBottom:pb.length>0?10:0}}>
+              <span style={{fontSize:13}}>🎯 {getTotalShots(state.workouts,p.id)} shots</span>
+              <span style={{fontSize:13}}>⏱ {getTotalDribble(state.workouts,p.id)}min</span>
+              <span style={{fontSize:13}}>📋 {state.workouts.filter(w=>w.userId===p.id).length} sessions</span>
             </div>
-          </Row>
-          <div style={{display:"flex",gap:16,marginBottom:pb.length>0?10:0}}><span style={{fontSize:13}}>🎯 {getTotalShots(state.workouts,p.id)} shots</span><span style={{fontSize:13}}>⏱ {getTotalDribble(state.workouts,p.id)}min</span><span style={{fontSize:13}}>📋 {state.workouts.filter(w=>w.userId===p.id).length} sessions</span></div>
-          {pb.length>0&&<Row style={{gap:8}}>{pb.map(b=><span key={b} title={BADGES_META[b]?.label} style={{fontSize:18}}>{BADGES_META[b]?.icon}</span>)}</Row>}
-        </Card>
-      );})}
-      {players.length===0&&<div style={{textAlign:"center",color:C.sub,marginTop:40,fontSize:14}}>{allPlayers.length===0?"No players yet. Share your join code!":"No players match this grade filter."}</div>}
+            {pb.length>0&&<Row style={{gap:8,marginBottom:10}}>{pb.map(b=><span key={b} title={BADGES_META[b]?.label} style={{fontSize:18}}>{BADGES_META[b]?.icon}</span>)}</Row>}
+
+            {!confirming
+              ? <button onClick={()=>setConfirmId(p.id)} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:C.sub,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>Remove from team</button>
+              : <div style={{background:"#FEF2F2",borderRadius:10,padding:"10px 12px",marginTop:4}}>
+                  <div style={{fontSize:13,color:"#B91C1C",fontWeight:600,marginBottom:8}}>Remove {p.name} from this team?</div>
+                  <Row style={{gap:8}}>
+                    <Btn sm color={C.red} onClick={()=>{onRemovePlayer(p.id);setConfirmId(null);}}>Yes, Remove</Btn>
+                    <Btn sm outline color={C.sub} onClick={()=>setConfirmId(null)}>Cancel</Btn>
+                  </Row>
+                </div>
+            }
+          </Card>
+        );
+      })}
+      {players.length===0&&<div style={{textAlign:"center",color:C.sub,marginTop:40,fontSize:14}}>{filter==="All"?"No players yet. Share your join code!":`No ${filter} players on this team.`}</div>}
     </div>
   );
 }
-
 
 // ─── Coach: Goals ─────────────────────────────────────────────────────────────
 
@@ -758,7 +668,7 @@ function CoachGoals({state,me,selectedTeamId,onAddGoal,onDelGoal,onAddCST,onDelC
       <Btwn style={{marginBottom:10}}><SecTitle>Goals</SecTitle><Btn sm full={false} onClick={()=>setShowGoal(!showGoal)}>+ Add Goal</Btn></Btwn>
       {showGoal&&(
         <Card style={{background:"#F8FAFC"}}>
-          <Sel label="Assign to" value={f.assignTo} onChange={e=>sf("assignTo",e.target.value)}><option value="team">Whole Team</option>{players.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</Sel>
+          <Sel label="Assign to" value={f.assignTo} onChange={e=>sf("assignTo",e.target.value)}><option value="team">Whole Team</option>{players.map(p=><option key={p.id} value={p.id}>{p.name}{p.grade?` · ${p.grade}`:""}</option>)}</Sel>
           <Sel label="Goal type" value={f.type} onChange={e=>sf("type",e.target.value)}><option value="shots">Shots</option><option value="dribbling">Dribbling</option></Sel>
           {f.type==="shots"&&<Sel label="Shot type" value={f.shotType} onChange={e=>sf("shotType",e.target.value)}><optgroup label="Standard">{SHOT_TYPES.map(t=><option key={t}>{t}</option>)}</optgroup>{customST.length>0&&<optgroup label="— Team Custom —">{customST.map(t=><option key={t.id}>{t.name}</option>)}</optgroup>}</Sel>}
           <Inp label="Goal label" placeholder='e.g. "Free Throws This Week"' value={f.label} onChange={e=>sf("label",e.target.value)}/>
@@ -774,7 +684,7 @@ function CoachGoals({state,me,selectedTeamId,onAddGoal,onDelGoal,onAddCST,onDelC
       ))}
       {players.map(p=>{const pg=state.playerGoals?.[p.id]||[];if(!pg.length)return null;return(
         <div key={p.id}>
-          <SecTitle>{p.name}'s Individual Goals</SecTitle>
+          <SecTitle>{p.name}{p.grade?` · ${p.grade}`:""}'s Individual Goals</SecTitle>
           {pg.map(g=><Card key={g.id}><Btwn><div><div style={{fontWeight:700}}>{g.label}</div><div style={{fontSize:12,color:C.sub,marginTop:2}}>{g.period} · {g.target} {g.type==="dribbling"?"min":"shots"}</div></div><button onClick={()=>onDelGoal(g.id)} style={{background:"transparent",border:"none",color:C.sub,cursor:"pointer",fontSize:18,padding:0,lineHeight:1}}>🗑</button></Btwn></Card>)}
         </div>
       );})}
@@ -860,6 +770,11 @@ export default function App() {
 
   const handleSwitchTeam=async(teamId)=>{setSelectedTeamId(teamId);setTab("home");};
 
+  const handleRemovePlayer=async(playerId)=>{
+    await supabase.from("users").update({team_id:null}).eq("id",playerId);
+    await refresh();
+  };
+
   const handleSaveWorkout=async({shots,dribble,note})=>{
     const{profile,state}=appData;
     const{data:workout}=await supabase.from("workouts").insert({user_id:profile.id,team_id:profile.teamId,date:tod(),dribble,note}).select().single();
@@ -931,7 +846,7 @@ export default function App() {
       {!isCoach&&tab==="profile"     &&<Profile       state={state} me={me} onLogout={handleLogout}/>}
 
       {isCoach&&tab==="home"         &&<CoachOverview state={state} me={me} selectedTeamId={activeTeamId} onPostAnn={handlePostAnn} onUnpin={handleUnpin} onLogout={handleLogout} onReports={()=>setShowReports(true)}/>}
-      {isCoach&&tab==="players"      &&<CoachPlayers  state={state} selectedTeamId={activeTeamId}/>}
+      {isCoach&&tab==="players"      &&<CoachPlayers  state={state} selectedTeamId={activeTeamId} onRemovePlayer={handleRemovePlayer}/>}
       {isCoach&&tab==="goals"        &&<CoachGoals    state={state} me={me} selectedTeamId={activeTeamId} onAddGoal={handleAddGoal} onDelGoal={handleDelGoal} onAddCST={handleAddCST} onDelCST={handleDelCST} onEditCST={handleEditCST}/>}
       {isCoach&&tab==="feed"         &&<Feed          state={state} me={me} onReact={handleReact} onComment={handleComment}/>}
       {isCoach&&tab==="leaderboard"  &&<Leaderboard   state={state} me={me} selectedTeamId={activeTeamId}/>}
